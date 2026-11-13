@@ -99,11 +99,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/REPLACE_ME/dsh-plugin-provider-console.git"
+    "url": "git+https://github.com/shuai0503/dsh-plugin-provider-console.git"
   },
-  "homepage": "https://github.com/REPLACE_ME/dsh-plugin-provider-console#readme",
+  "homepage": "https://github.com/shuai0503/dsh-plugin-provider-console#readme",
   "bugs": {
-    "url": "https://github.com/REPLACE_ME/dsh-plugin-provider-console/issues"
+    "url": "https://github.com/shuai0503/dsh-plugin-provider-console/issues"
   },
   "publishConfig": {
     "access": "public"
