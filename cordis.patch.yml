@@ -1,134 +1,55 @@
 # =============================================================================
-# provider-console 挂载到 DSH profile 的补丁示例（与 desktop profile 实际配置一致）
+# dsh-plugin-provider-console 的默认挂载配置（随包发布，作为 profile 的一层）
 #
-# 2026-11-06 审批后已挂载到 ~/.dsh/profiles/desktop/cordis.patch.yml。
-# 挂载需要三处：package.json 的 link 依赖、本 insert 段、node_modules 里的目录链接。
-# 首次挂载会被宿主加载；之后改 client.js / package.json / 源码，需要重启 DSH 应用
-# （当前版本的 HMR 只更新配置树，不重新求值已缓存的 ESM 模块）。
+# 这里只保留「开箱即用」需要的最少设置：
+#   - 内置服务商全部可用
+#   - 自动探测已配置的 API Key（零配置）
+#   - 本地看板 + 左侧栏入口开启
 #
-# 密钥一律通过环境变量提供，配置文件里不写明文：
-#   Windows PowerShell:  $env:DEEPSEEK_API_KEY = "sk-..."
-#   bash / Git Bash    :  export DEEPSEEK_API_KEY="sk-..."
-# 也可以用插件的 provider_accounts → refresh-credentials 重读环境变量。
+# 不要在这里写密钥。密钥的正确落点是 DSH 的凭据服务：
+#   1) DSH 设置 → 模型/凭据页填一次（写入 ~/.dsh/.credentials.yaml）—— 自动探测会命中
+#   2) 或在账户里写 apiKey: "${DEEPSEEK_API_KEY}" 由环境变量提供
+#
+# 需要多账户、自定义标签、预警阈值时，在你的 profile 的 cordis.patch.yml
+# 里覆盖同 id 的 config 即可；已显式配置的账户永远优先于自动探测。
+# 完整示例见 examples/cordis.patch.example.yml
 # =============================================================================
 
 - insert:
     - id: provider-console
       name: dsh-plugin-provider-console
       config:
-        # ---------- 账户 ----------
-        # 目录里的 *.json 必须是严格 JSON（不支持注释）；单个坏文件只告警不中断加载。
-        # 完整示例见 examples/accounts.json（9 个账户）
-        accountsDir: C:/Users/24335/.dsh/provider-console/accounts
+        # 自动探测：有哪个服务的 Key 就自动建哪个账户，不需要手写 accounts
+        autoDiscover: true
 
-        # 内联账户优先级最高，会覆盖 accountsDir 中同 id 的定义。
-        # 下面这段是配置示例；实际 desktop profile 里 accounts 只有一个 manual 演示账户，
-        # 因为本次审批明确跳过真实 API Key，不产生任何外部请求。
-        accounts:
-          - id: ds-main
-            provider: deepseek
-            label: DeepSeek 主账号
-            apiKeyEnv: DEEPSEEK_API_KEY
-            defaultModel: deepseek-chat
-            lowBalanceThreshold: 20
-
-          - id: kimi-cn
-            provider: moonshot-cn
-            label: Kimi 国内站
-            apiKeyEnv: MOONSHOT_API_KEY
-            defaultModel: kimi-k2
-            lowBalanceThreshold: 20
-
-          - id: qwen-bj
-            provider: dashscope
-            label: 通义千问 / 百炼（北京）
-            apiKeyEnv: DASHSCOPE_API_KEY
-            defaultModel: qwen-plus
-            # 百炼没有按 API Key 查余额的接口，用手工录入并标注来源
-            balancePreset: manual
-            manual:
-              total: 0
-              currency: CNY
-              note: 控制台抄录值，非实时
-
-          - id: glm-plan
-            provider: zhipu
-            label: 智谱 GLM Coding Plan
-            apiKeyEnv: ZHIPU_PLAN_API_KEY
-            # 套餐账号看配额窗口，而不是现金余额
-            balancePreset: quota
-
-          - id: siliconflow
-            provider: siliconflow
-            label: 硅基流动
-            apiKeyEnv: SILICONFLOW_API_KEY
-            # 官方 /user/info 已于 2026-08-14 停用（Release Notes 2026.08.11），
-            # 替代余额接口尚未公布 → 只能手工录入，或去控制台查看。
-            balancePreset: manual
-            manual:
-              total: 0
-              currency: CNY
-              note: 控制台抄录值，非实时（官方余额接口已停用）
-
-        # ---------- 自定义服务商（可选，声明式接入任意 OpenAI 兼容端点）----------
-        providersDir: C:/Users/24335/.dsh/provider-console/providers
+        # 内置服务商的声明式规格（DeepSeek / Kimi / 智谱 / 硅基流动 / 百炼 / 火山 / 千帆 / 混元）
         includeBuiltinProviders: true
 
-        # ---------- 网络 ----------
+        # 网络
         requestTimeoutMs: 15000
-        retries: 1              # 仅网络/5xx/限流会重试；401/402/解析错误立即失败
+        retries: 1
         retryBaseMs: 250
-        maxResponseChars: 200000
-        concurrency: 4          # 余额刷新的账户级并发上限
+        concurrency: 4
 
-        # ---------- 余额 ----------
-        cacheTtlMs: 60000       # 缓存有效期；force 刷新可绕过
-        autoRefreshMs: 0        # 0=关闭；例如 300000 表示后台每 5 分钟刷新一次
-        lowBalanceThreshold: 20 # 全局预警阈值，账户可单独覆盖
+        # 余额缓存
+        cacheTtlMs: 60000
+        autoRefreshMs: 0
+        lowBalanceThreshold: 20
 
-        # ---------- 通用调用 ----------
+        # 通用调用
         maxOutputChars: 8000
-        allowStream: false      # true 时把 SSE 聚合为一段文本返回
+        allowStream: false
         allowRawRequests: true
-        # raw 模式 / 自定义 baseUrl 的主机白名单；默认会自动并入所有账户端点
-        # allowedHosts:
-        #   - proxy.example.com
 
-        # ---------- 系统提示词注入（审批后开启）----------
-        # 走 DSH 原生 ctx.systemPrompt.section()，不动 ~/.dsh/AGENTS.md 全局通道。
-        # 宿主不支持时静默跳过；systemPromptText / systemPromptOrder 可覆盖内置段。
-        systemPromptSection: true
-
-        # ---------- 本地实时看板（审批后开启，只绑 127.0.0.1）----------
+        # 本地看板（只绑 127.0.0.1，不监听外网）
         dashboard:
           enabled: true
           host: 127.0.0.1
           port: 8788
           pollMs: 5000
 
-        # ---------- 左侧「服务商控制台」入口（宿主侧栏）----------
-        # client.js 注册 sidebar.panellist 图标 + main 面板，面板内嵌上面的看板
-        # （?embed=1 走暗色样式）。enabled:false 可只保留工具与看板、不加入口。
+        # 左侧栏「服务商控制台」入口
         sidebar:
           enabled: true
           label: 服务商控制台
           order: 20
-          dashboardUrl: "http://127.0.0.1:8788/"
-
-        # ---------- 云账号签名适配器（审批后接入代码，开关保持关闭）----------
-        # 开启前需设置 AK/SK 环境变量并确认 RAM/IAM 授权。
-        # 火山侧还必须按账号实际开通的计费 API 填写 action/version/service/balanceMap，
-        # 插件不预设、不猜测未核实的端点；本项未经真实凭据联网验证。
-        cloudSigning:
-          enabled: false
-          aliyun:
-            accessKeySecretEnv: ALIBABA_CLOUD_ACCESS_KEY_SECRET
-            balanceMap:
-              total: Data.AvailableAmount
-              currency: Data.Currency
-          volc:
-            accessKeyEnv: VOLC_ACCESSKEY
-            secretKeyEnv: VOLC_SECRETKEY
-            action: ''
-            version: ''
-            service: ''

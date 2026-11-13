@@ -62,7 +62,8 @@ test('配置：缺省值与派生主机白名单', () => {
   assert.equal(resolved.balance.autoRefreshMs, 0)
   assert.equal(resolved.balance.concurrency, 4)
   assert.equal(resolved.http.timeoutMs, 15_000)
-  assert.equal(resolved.dashboard.enabled, false)
+  // 看板默认开启：与 client.js 的默认值一致，避免「宿主不监听、客户端却渲染 iframe」的白屏
+  assert.equal(resolved.dashboard.enabled, true)
   assert.equal(resolved.dashboard.host, '127.0.0.1')
   assert.ok(resolved.call.allowedHosts.includes('api.deepseek.com'))
   assert.equal(resolved.call.allowStream, false)

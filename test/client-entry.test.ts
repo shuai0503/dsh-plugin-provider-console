@@ -148,3 +148,19 @@ test('dashboardUrl 的兜底与显式 url 覆盖', () => {
   assert.equal(embedUrl('http://localhost:9002/base', 0), 'http://localhost:9002/base?embed=1')
   assert.equal(embedUrl('http://localhost:9002/base?x=1', 7), 'http://localhost:9002/base?x=1&embed=1&t=7')
 })
+
+// 回归守卫：宿主（config.ts）与客户端（client.js）对 dashboard.enabled 的缺省值必须一致。
+// 两者相反时，最小配置下宿主不监听端口、客户端却渲染 iframe，用户看到的是白屏。
+test('dashboard.enabled 的缺省值两端一致：都视为开启', async () => {
+  const { resolveConfig } = await import('../src/config.ts')
+  const hostDefault = resolveConfig({}).dashboard.enabled
+  assert.equal(hostDefault, true, '宿主缺省应为开启')
+
+  // client.js 里的等价判断是 `!d || d.enabled !== false`
+  const { plugin } = loadClient()
+  assert.equal(plugin.__test.dashboardEnabled({}), true, '客户端无配置时应开启')
+  assert.equal(plugin.__test.dashboardEnabled({ dashboard: {} }), true)
+  assert.equal(plugin.__test.dashboardEnabled({ dashboard: { enabled: true } }), true)
+  assert.equal(plugin.__test.dashboardEnabled({ dashboard: { enabled: false } }), false)
+})
+

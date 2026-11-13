@@ -1,6 +1,6 @@
-﻿{
+{
   "name": "dsh-plugin-provider-console",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "DeepSeek Harness 插件：多账户余额查询/刷新 + 通用模型 API 调用入口。Provider console for DeepSeek Harness: multi-account balance checks and a generic OpenAI-compatible invocation tool.",
   "type": "module",
   "main": "./lib/index.js",
@@ -30,6 +30,9 @@
     "./prompts/*": "./prompts/*"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [

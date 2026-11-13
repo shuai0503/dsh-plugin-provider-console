@@ -82,7 +82,9 @@ export function resolveConfig(config: ConsoleConfig = {}, cwd: string = process.
   }
 
   const dashboard: DashboardConfig = {
-    enabled: config.dashboard?.enabled === true,
+    // 默认开启：与 client.js 的默认值保持一致（客户端缺省视为开启）。
+    // 两端默认值相反时，最小配置下宿主不监听端口、客户端却渲染 iframe，必然白屏。
+    enabled: config.dashboard?.enabled !== false,
     host: config.dashboard?.host ?? '127.0.0.1',
     port: clamp(config.dashboard?.port ?? 8788, 1, 65535),
     pollMs: clamp(config.dashboard?.pollMs ?? 5000, 1000, 600_000),

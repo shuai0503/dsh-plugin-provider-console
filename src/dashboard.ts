@@ -61,6 +61,17 @@ export function createDashboard(options: DashboardOptions): DashboardHandle {
         return send(200, { ok: true, accounts: options.registry.listAccountIds().length })
       }
       if (req.method === 'GET' && url.pathname === '/api/state') {
+        // 冷启动时缓存为空，直接返回会让首屏显示「没有启用的账户」，
+        // 用户会误以为没配好而去改 YAML。这里在缓存全空时补一次非 force 刷新
+        // （走 TTL 逻辑，已有缓存时不会重复打上游）。
+        const hasAccounts = options.registry.listAccountIds().length > 0
+        if (hasAccounts && options.balances.snapshot().accounts.length === 0) {
+          try {
+            await options.balances.refresh({})
+          } catch {
+            /* 首屏刷新失败也要返回结构，前端会显示错误行 */
+          }
+        }
         return send(200, {
           generatedAt: Date.now(),
           accounts: options.registry.listAccounts(),

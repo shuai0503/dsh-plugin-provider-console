@@ -1,0 +1,134 @@
+# =============================================================================
+# 【进阶示例】多账户 / 自定义服务商 / 云账号签名
+#
+# 插件默认已开箱即用（自动探测 Key + 看板 + 侧栏），通常不需要这个文件。
+# 只有当你需要「多账户 / 自定义标签 / 预警阈值 / 云账号签名」时，
+# 才把下面的片段复制到你自己 profile 的 cordis.patch.yml 里覆盖。
+#
+# 注意：
+#   - accountsDir / providersDir 必须是**绝对路径**
+#     （相对路径按 DSH 进程的 cwd 解析，不是家目录）
+#   - 不要写明文密钥：用 apiKeyEnv，或 apiKey: "${VAR_NAME}"
+#   - 已显式配置的账户永远优先于自动探测，同名不会被覆盖
+# =============================================================================
+
+- insert:
+    - id: provider-console
+      name: dsh-plugin-provider-console
+      config:
+        # ---------- 账户 ----------
+        # 目录里的 *.json 必须是严格 JSON（不支持注释）；单个坏文件只告警不中断加载。
+        # 完整示例见 examples/accounts.json（9 个账户）
+        accountsDir: /你的绝对路径/.dsh/provider-console/accounts
+
+        # 内联账户优先级最高，会覆盖 accountsDir 中同 id 的定义。
+        # 下面这段是配置示例；实际 desktop profile 里 accounts 只有一个 manual 演示账户，
+        # 因为本次审批明确跳过真实 API Key，不产生任何外部请求。
+        accounts:
+          - id: ds-main
+            provider: deepseek
+            label: DeepSeek 主账号
+            apiKeyEnv: DEEPSEEK_API_KEY
+            defaultModel: deepseek-chat
+            lowBalanceThreshold: 20
+
+          - id: kimi-cn
+            provider: moonshot-cn
+            label: Kimi 国内站
+            apiKeyEnv: MOONSHOT_API_KEY
+            defaultModel: kimi-k2
+            lowBalanceThreshold: 20
+
+          - id: qwen-bj
+            provider: dashscope
+            label: 通义千问 / 百炼（北京）
+            apiKeyEnv: DASHSCOPE_API_KEY
+            defaultModel: qwen-plus
+            # 百炼没有按 API Key 查余额的接口，用手工录入并标注来源
+            balancePreset: manual
+            manual:
+              total: 0
+              currency: CNY
+              note: 控制台抄录值，非实时
+
+          - id: glm-plan
+            provider: zhipu
+            label: 智谱 GLM Coding Plan
+            apiKeyEnv: ZHIPU_PLAN_API_KEY
+            # 套餐账号看配额窗口，而不是现金余额
+            balancePreset: quota
+
+          - id: siliconflow
+            provider: siliconflow
+            label: 硅基流动
+            apiKeyEnv: SILICONFLOW_API_KEY
+            # 官方 /user/info 已于 2026-08-14 停用（Release Notes 2026.08.11），
+            # 替代余额接口尚未公布 → 只能手工录入，或去控制台查看。
+            balancePreset: manual
+            manual:
+              total: 0
+              currency: CNY
+              note: 控制台抄录值，非实时（官方余额接口已停用）
+
+        # ---------- 自定义服务商（可选，声明式接入任意 OpenAI 兼容端点）----------
+        providersDir: /你的绝对路径/.dsh/provider-console/providers
+        includeBuiltinProviders: true
+
+        # ---------- 网络 ----------
+        requestTimeoutMs: 15000
+        retries: 1              # 仅网络/5xx/限流会重试；401/402/解析错误立即失败
+        retryBaseMs: 250
+        maxResponseChars: 200000
+        concurrency: 4          # 余额刷新的账户级并发上限
+
+        # ---------- 余额 ----------
+        cacheTtlMs: 60000       # 缓存有效期；force 刷新可绕过
+        autoRefreshMs: 0        # 0=关闭；例如 300000 表示后台每 5 分钟刷新一次
+        lowBalanceThreshold: 20 # 全局预警阈值，账户可单独覆盖
+
+        # ---------- 通用调用 ----------
+        maxOutputChars: 8000
+        allowStream: false      # true 时把 SSE 聚合为一段文本返回
+        allowRawRequests: true
+        # raw 模式 / 自定义 baseUrl 的主机白名单；默认会自动并入所有账户端点
+        # allowedHosts:
+        #   - proxy.example.com
+
+        # ---------- 系统提示词注入（审批后开启）----------
+        # 走 DSH 原生 ctx.systemPrompt.section()，不动 ~/.dsh/AGENTS.md 全局通道。
+        # 宿主不支持时静默跳过；systemPromptText / systemPromptOrder 可覆盖内置段。
+        systemPromptSection: true
+
+        # ---------- 本地实时看板（审批后开启，只绑 127.0.0.1）----------
+        dashboard:
+          enabled: true
+          host: 127.0.0.1
+          port: 8788
+          pollMs: 5000
+
+        # ---------- 左侧「服务商控制台」入口（宿主侧栏）----------
+        # client.js 注册 sidebar.panellist 图标 + main 面板，面板内嵌上面的看板
+        # （?embed=1 走暗色样式）。enabled:false 可只保留工具与看板、不加入口。
+        sidebar:
+          enabled: true
+          label: 服务商控制台
+          order: 20
+          dashboardUrl: "http://127.0.0.1:8788/"
+
+        # ---------- 云账号签名适配器（审批后接入代码，开关保持关闭）----------
+        # 开启前需设置 AK/SK 环境变量并确认 RAM/IAM 授权。
+        # 火山侧还必须按账号实际开通的计费 API 填写 action/version/service/balanceMap，
+        # 插件不预设、不猜测未核实的端点；本项未经真实凭据联网验证。
+        cloudSigning:
+          enabled: false
+          aliyun:
+            accessKeySecretEnv: ALIBABA_CLOUD_ACCESS_KEY_SECRET
+            balanceMap:
+              total: Data.AvailableAmount
+              currency: Data.Currency
+          volc:
+            accessKeyEnv: VOLC_ACCESSKEY
+            secretKeyEnv: VOLC_SECRETKEY
+            action: ''
+            version: ''
+            service: ''

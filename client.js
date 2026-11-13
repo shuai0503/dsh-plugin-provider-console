@@ -92,11 +92,20 @@ window.__ModuleLoader__.load({
       color: 'var(--dsw-alias-text-primary, #e7eaf0)',
     }
 
+    /**
+     * 看板是否启用。缺省视为开启，必须与宿主侧 config.ts 的
+     * `config.dashboard?.enabled !== false` 保持一致：
+     * 两端默认值相反时，最小配置下宿主不监听端口、这里却渲染 iframe，结果是白屏。
+     */
+    function dashboardEnabled(config) {
+      var d = config && config.dashboard
+      return !d || d.enabled !== false
+    }
+
     /** 主面板：工具条 + 内嵌看板；看板关闭时给出明确的开启指引。 */
     function makePage(config) {
       return function ProviderConsolePage() {
-        var d = config && config.dashboard
-        var enabled = !d || d.enabled !== false
+        var enabled = dashboardEnabled(config)
         var base = dashboardUrl(config)
         var state = React.useState(0)
         var nonce = state[0]
@@ -202,7 +211,7 @@ window.__ModuleLoader__.load({
     exports.name = name
     exports.inject = inject
     exports.apply = apply
-    exports.__test = { dashboardUrl: dashboardUrl, embedUrl: embedUrl, PANEL_ID: PANEL_ID }
+    exports.__test = { dashboardUrl: dashboardUrl, embedUrl: embedUrl, dashboardEnabled: dashboardEnabled, PANEL_ID: PANEL_ID }
     return module.exports
   },
 })

@@ -29,7 +29,9 @@ dsh plugin --profile <你的profile> add dsh-plugin-provider-console
 
 设计上刻意注意了三点：
 
-- **只探测存在性，不读值** —— 首轮只调用 `describe`，确认「配没配」；真正取密钥发生在你第一次查余额时
+- **探测行为说明** —— 首轮对每个服务商调用一次 `ctx.credentials.resolve()`（与 DSH 自身调用等价），
+  取到的值**只存在于注册中心的内存私有表**里，不落盘、不进配置文件、不进日志；
+  `listAccounts()`、工具输出、诊断报告一律只见 `hasApiKey` 布尔值
 - **不会发任何网络请求** —— 探测只问 DSH 的凭据服务，不碰外部接口
 - **按需降级** —— 宿主没有凭据服务时静默跳过，其余功能完全不受影响（`credentials` 不是硬依赖）
 
@@ -65,17 +67,28 @@ config:
             lowBalanceThreshold: 20
 ```
 
-**密钥一律通过环境变量提供，配置文件里不写明文：**
+**密钥放在哪里（按推荐顺序）：**
 
-```powershell
-# Windows PowerShell
-$env:DEEPSEEK_API_KEY = "sk-..."
-```
+1. **推荐：DSH 设置页 → 模型 / 凭据，填一次。** 值会写进 `~/.dsh/.credentials.yaml` 的 `refs:` 下，
+   自动探测读的就是这里，配完立即生效，无需重启。
 
-```bash
-# bash / Git Bash
-export DEEPSEEK_API_KEY="sk-..."
-```
+2. 也可以直接在账户里引用环境变量：
+
+   ```yaml
+   apiKey: "${DEEPSEEK_API_KEY}"
+   ```
+
+3. **环境变量（有坑，最后选）**：把变量设到**系统/用户环境变量**里，然后**重启 DSH 应用**。
+
+   > ⚠️ DSH 桌面版是 Electron 进程，只继承启动它时的环境变量。
+   > **在另一个 PowerShell 窗口里 `export` 对已经运行的 DSH 完全无效**——
+   > 这是最常见的「我明明设了却提示没有 Key」的原因。
+
+配置落点写清楚之后，验证只有三步：
+
+1. 重启 DSH
+2. 打开左侧栏「服务商控制台」——**看到账户表就是生效了**
+3. 看不到就跑一次 `provider_status`，把输出贴上来排查
 
 也可以把账户写成 JSON 文件放进 `accountsDir` 目录批量管理，见 [`examples/accounts.json`](./examples/accounts.json)。
 
@@ -144,12 +157,12 @@ export DEEPSEEK_API_KEY="sk-..."
 ## 开发
 
 ```bash
-node --test        # 58 个测试
+node --test        # 测试数量以 test/ 目录为准
 npm run typecheck  # tsc --noEmit
 ```
 
-源码是 TypeScript，**由 Node 原生类型剥离直接加载，不需要构建步骤**（`node >= 22.18`）。
-用 `dsh plugin add` 安装后即可直接运行，修改源码后重启 DSH 生效。
+源码是 TypeScript。开发时可用 Node 原生类型剥离直接跑 `src/`（`node >= 22.18`），
+**但作为包被加载时走 `lib/`，所以改动后必须 `npm run build`**（`lib/` 已 gitignore，未构建的 checkout 无法被 import）。
 
 ```
 src/

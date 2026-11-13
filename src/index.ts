@@ -35,7 +35,7 @@ import {
 } from './prompt-section.ts'
 
 export const name = 'provider-console'
-export const version = '0.2.2'
+export const version = '0.2.3'
 
 /**
  * 只硬依赖 tools；其余宿主能力全部可选。

@@ -113,7 +113,7 @@ test('插件元数据与工具注册', () => {
   const h = harness()
   apply(h.ctx as never, baseConfig)
   assert.equal(name, 'provider-console')
-  assert.equal(version, '0.2.2')
+  assert.equal(version, '0.2.3')
   assert.deepEqual(
     h.tools.map((tool) => tool.name).sort(),
     ['provider_accounts', 'provider_balances', 'provider_call', 'provider_models', 'provider_request', 'provider_status'],
