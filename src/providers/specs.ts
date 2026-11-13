@@ -125,9 +125,18 @@ export const BUILTIN_PROVIDER_SPECS: ProviderSpec[] = [
     balanceBaseUrl: 'https://api.siliconflow.cn',
     auth: BEARER,
     defaultModels: ['Qwen/Qwen3-8B', 'deepseek-ai/DeepSeek-V3'],
-    balance: { kind: 'money', method: 'GET', url: '/v1/user/info', mapper: 'siliconflow' },
-    docs: 'https://docs.siliconflow.com/cn/api-reference/userinfo/get-user-info',
-    notes: '官方用户信息接口含 balance（赠金）、chargeBalance（充值）、totalBalance。',
+    // 对话能力正常，但余额查不了：
+    // 官方 Release Notes（2026.08.11「[API Service Adjustment] /user/info Endpoint Deprecation」）
+    // 宣布 /user/info 于 2026-08-14 正式停用，替代接口「in due course」尚未公布；
+    // 停用后该端点返回 410（magpie 实测）。注意 API Reference 页面仍在列该端点，属文档滞后，
+    // 以 Release Notes 为准。用无效 Key 探测会返回 401 而非 410 —— 鉴权在路由之前，401 不能证明端点还活着。
+    balance: {
+      kind: 'unsupported',
+      note: '/user/info 已于 2026-08-14 停用（官方公告），替代余额接口尚未公布，按 API Key 查不了余额。建议设 balancePreset=manual 手工录入，或去控制台 https://cloud.siliconflow.cn/ 查看余额与代金券。',
+    },
+    docs: 'https://docs.siliconflow.com/cn/release-notes/overview',
+    notes:
+      '对话能力不受影响。历史赠送余额已改为代金券（2026.03.26 公告）。余额接口停用公告：2026.11 核实的 Release Notes 条目。',
   },
   {
     id: 'volcengine',

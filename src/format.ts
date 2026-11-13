@@ -89,7 +89,10 @@ function breakdownCell(item: BalanceSnapshot): string {
 export function renderAccounts(accounts: AccountInfo[], providers: ProviderInfo[] = []): string {
   const lines: string[] = ['## 已配置账户', '']
   if (accounts.length === 0) {
-    lines.push('（空）在 cordis.patch.yml 的 accounts / accountsDir 里添加账户。')
+    lines.push(
+      '（空）在 cordis.patch.yml 的 accounts / accountsDir 里添加账户；' +
+        '若宿主提供了 credentials 服务，autoDiscover=true 会自动为已配置的 API Key 生成账户。',
+    )
   } else {
     lines.push('| id | 服务商 | 余额能力 | 凭据 | 默认模型 | 状态 |')
     lines.push('| --- | --- | --- | --- | --- | --- |')
@@ -101,8 +104,9 @@ export function renderAccounts(accounts: AccountInfo[], providers: ProviderInfo[
           : account.balanceKind === 'quota'
             ? '配额窗口'
             : `余额${account.balanceReliable ? '' : '（非官方端点）'}`
+      const state = account.enabled ? (account.discovered ? '启用（自动探测）' : '启用') : '停用'
       lines.push(
-        `| \`${account.id}\` | ${escapeCell(account.label)} / ${account.provider} | ${ability} | ${account.hasApiKey ? `已配置 (${account.apiKeySource})` : '**缺失**'} | ${account.defaultModel ?? '—'} | ${account.enabled ? '启用' : '停用'} |`,
+        `| \`${account.id}\` | ${escapeCell(account.label)} / ${account.provider} | ${ability} | ${account.hasApiKey ? `已配置 (${account.apiKeySource})` : '**缺失**'} | ${account.defaultModel ?? '—'} | ${state} |`,
       )
     }
   }

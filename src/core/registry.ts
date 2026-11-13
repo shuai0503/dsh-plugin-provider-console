@@ -12,6 +12,7 @@ import type {
   AccountConfig,
   AccountInfo,
   BalanceKind,
+  DiscoveredAccount,
   HttpRequestSpec,
   LogFn,
   ProviderAdapter,
@@ -34,6 +35,14 @@ export class ConsoleRegistry {
   private readonly accounts = new Map<string, ResolvedAccount>()
   private readonly rawAccounts = new Map<string, AccountConfig>()
   private readonly disabled = new Set<string>()
+  /**
+   * 自动探测生成的账户及其密钥。
+   *
+   * 密钥刻意**不**写进 AccountConfig：那是会出现在 config / 报告 / 工具参数里的
+   * 数据结构。这里只存 ResolvedAccount 需要的最终值，`listAccounts()` 也只读
+   * `hasApiKey`，所以自动账户与显式账户对外表现一致，明文不外泄。
+   */
+  private readonly discovered = new Map<string, DiscoveredAccount>()
   private readonly env: Record<string, string | undefined>
   private readonly log: LogFn
 
@@ -142,7 +151,73 @@ export class ConsoleRegistry {
   unregisterAccount(id: string): boolean {
     this.rawAccounts.delete(id)
     this.disabled.delete(id)
+    this.discovered.delete(id)
     return this.accounts.delete(id)
+  }
+
+  /** 是否已有该 id 的账户（含已禁用的）。 */
+  hasAccount(id: string): boolean {
+    return this.accounts.has(id)
+  }
+
+  /** 是否注册过该服务商。 */
+  hasProvider(id: string): boolean {
+    return this.adapters.has(id)
+  }
+
+  /** 该账户是否由凭证自动探测生成。 */
+  isDiscovered(id: string): boolean {
+    return this.discovered.has(id)
+  }
+
+  /**
+   * 注册一个自动探测到的账户。
+   *
+   * 与 `registerAccount()` 的差别只有两点：密钥由调用方直接给出（不经过环境变量，
+   * 因为值来自 credentials 接缝），以及会记下「这是自动账户」以便状态工具区分。
+   *
+   * 返回值区分三种情况，好让调用方（重复探测时）如实报告：
+   *  - `created` 新建；`updated` 覆盖了**上一次自动探测**的账户；`skipped` 同名账户
+   *    是用户显式配置的，一个字节都不写 —— 显式配置永远优先。
+   */
+  registerDiscoveredAccount(
+    raw: Pick<AccountConfig, 'id' | 'provider' | 'label' | 'apiKeyEnv'>,
+    apiKey: string,
+  ): 'created' | 'updated' | 'skipped' {
+    if (!raw || typeof raw.id !== 'string' || !ID_PATTERN.test(raw.id)) {
+      throw configError(`非法账户 id：${String(raw?.id)}`)
+    }
+    if (this.accounts.has(raw.id) && !this.discovered.has(raw.id)) {
+      this.log(`自动探测：账户 "${raw.id}" 已由用户显式配置，保留原配置`)
+      return 'skipped'
+    }
+    const secret = (apiKey ?? '').trim()
+    if (!secret) throw configError(`账户 "${raw.id}" 自动探测到的密钥为空`)
+    const adapter = this.adapter(raw.provider)
+    const accountConfig: AccountConfig = {
+      id: raw.id,
+      provider: raw.provider,
+      label: raw.label ?? raw.id,
+      apiKeyEnv: raw.apiKeyEnv,
+    }
+    const resolved = this.resolveAccount(accountConfig, adapter.spec)
+    // 接缝给出的值优先于环境变量解析结果（同一个变量名可能两处都有）
+    const withSecret: ResolvedAccount = {
+      ...resolved,
+      apiKey: secret,
+      apiKeySource: raw.apiKeyEnv ? `credentials:${raw.apiKeyEnv}` : 'credentials',
+    }
+    const existed = this.discovered.has(raw.id)
+    this.accounts.set(raw.id, withSecret)
+    this.discovered.set(raw.id, {
+      id: raw.id,
+      provider: raw.provider,
+      label: accountConfig.label ?? raw.id,
+      apiKeyEnv: raw.apiKeyEnv ?? '',
+      apiKey: secret,
+    })
+    this.disabled.delete(raw.id)
+    return existed ? 'updated' : 'created'
   }
 
   setAccountEnabled(id: string, enabled: boolean): boolean {
@@ -165,6 +240,11 @@ export class ConsoleRegistry {
       } catch (error) {
         this.log(`刷新凭据失败 ${id}: ${(error as Error).message}`)
       }
+    }
+    // 自动探测账户不读环境变量（密钥来自 credentials 接缝），原样保留，
+    // 但仍算作「已刷新」，否则工具会让人误以为它们被清掉了。
+    for (const id of this.discovered.keys()) {
+      if (this.accounts.has(id)) updated.push(id)
     }
     return updated
   }
@@ -209,6 +289,7 @@ export class ConsoleRegistry {
           models: account.models ?? spec?.defaultModels,
           notes: spec?.notes,
           enabled: !this.disabled.has(id),
+          discovered: this.discovered.has(id) || undefined,
         }
       })
   }
@@ -251,6 +332,7 @@ export class ConsoleRegistry {
     this.rawAccounts.clear()
     this.adapters.clear()
     this.disabled.clear()
+    this.discovered.clear()
   }
 
   private resolveAccount(raw: AccountConfig, spec: ProviderSpec): ResolvedAccount {

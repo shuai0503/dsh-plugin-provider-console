@@ -40,9 +40,6 @@ const transport: Transport = async (request: HttpRequestSpec) => {
   if (url.includes('/users/me/balance')) {
     return json(200, { code: 0, data: { available_balance: 49.58894, voucher_balance: 46.58893, cash_balance: 3.00001 }, status: true })
   }
-  if (url.includes('/v1/user/info')) {
-    return json(200, { code: 20000, status: true, data: { balance: '0.88', chargeBalance: '88.00', totalBalance: '88.88' } })
-  }
   if (url.endsWith('/models')) {
     return json(200, { data: [{ id: 'deepseek-chat' }, { id: 'deepseek-reasoner' }, { id: 'qwen-plus' }] })
   }
@@ -62,7 +59,16 @@ const consoleInstance = createConsole(
     accounts: [
       { id: 'ds', provider: 'deepseek', label: 'DeepSeek 主账号', apiKeyEnv: 'DEMO_DS_KEY', lowBalanceThreshold: 20 },
       { id: 'kimi', provider: 'moonshot-cn', label: 'Kimi', apiKeyEnv: 'DEMO_KIMI_KEY' },
-      { id: 'sf', provider: 'siliconflow', label: '硅基流动', apiKeyEnv: 'DEMO_SF_KEY' },
+      // 硅基流动：官方 /user/info 已于 2026-08-14 停用，按 API Key 查不了余额，
+      // 这里演示推荐的替代做法 —— 从控制台抄录后设 balancePreset=manual。
+      {
+        id: 'sf',
+        provider: 'siliconflow',
+        label: '硅基流动',
+        apiKeyEnv: 'DEMO_SF_KEY',
+        balancePreset: 'manual',
+        manual: { total: 88.88, currency: 'CNY', note: '演示值：官方余额接口已停用，实际需从控制台抄录' },
+      },
       { id: 'qwen', provider: 'dashscope', label: '通义千问', apiKeyEnv: 'DEMO_QWEN_KEY', balancePreset: 'manual', manual: { total: 66, currency: 'CNY' } },
     ],
   },

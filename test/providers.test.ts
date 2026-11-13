@@ -5,7 +5,8 @@ import { resolveConfig } from '../src/config.ts'
 import { ConsoleRegistry } from '../src/core/registry.ts'
 import { getMapper, mapperNames, parseModelList, type MapperContext } from '../src/providers/mappers.ts'
 import { BUILTIN_PROVIDER_SPECS } from '../src/providers/specs.ts'
-import { compileCustomProvider, SpecAdapter } from '../src/providers/index.ts'
+import { compileCustomProvider, SpecAdapter, authHeaders } from '../src/providers/index.ts'
+import { joinUrl } from '../src/core/util.ts'
 import { jsonResponse, TEST_ENV } from './helpers.ts'
 
 function builtin(id: string): ProviderSpec {
@@ -86,8 +87,69 @@ test('Kimi 国内站 CNY / 国际站 USD，欠费给出预警', () => {
   globalRegistry.dispose()
 })
 
-test('硅基流动 user/info → 总余额与赠金/充值拆分', () => {
-  const payload = mapFirst('siliconflow', {
+test('硅基流动：余额接口已下线，不再构造任何余额请求（对话能力保留）', () => {
+  const spec = builtin('siliconflow')
+  // 官方 Release Notes 2026.08.11 公告：/user/info 于 2026-08-14 停用，替代接口未公布
+  assert.equal(spec.balance.kind, 'unsupported')
+  assert.match(spec.balance.note ?? '', /2026-08-14/)
+  assert.match(spec.balance.note ?? '', /停用/)
+  assert.match(spec.balance.note ?? '', /manual/)
+  // 关键：不能再有 url，否则会真的去打一个返回 410 的端点
+  assert.equal(spec.balance.url, undefined)
+  assert.equal(spec.balanceFallbacks, undefined)
+
+  const registry = registryFor('siliconflow')
+  assert.equal(
+    new SpecAdapter(spec).balanceRequests(registry.account('a')).length,
+    0,
+    '已下线的端点绝不能出现在请求里',
+  )
+  registry.dispose()
+
+  // 对话能力必须仍然可用：chat base / 模型列表 / 默认模型都不受影响
+  assert.equal(spec.chatBaseUrl, 'https://api.siliconflow.cn/v1')
+  assert.equal(spec.chatPath, '/chat/completions')
+  assert.equal(spec.modelsPath, '/models?sub_type=chat')
+  assert.ok(spec.defaultModels.length > 0)
+})
+
+test('硅基流动：对话调用照常构造请求并带上 Bearer 鉴权', () => {
+  const spec = builtin('siliconflow')
+  const adapter = new SpecAdapter(spec)
+  const registry = registryFor('siliconflow')
+  const account = registry.account('a')
+  assert.equal(account.provider, 'siliconflow')
+  assert.equal(account.apiKey, 'sk-unit-test-deepseek')
+  // 余额请求为空，但对话端点、鉴权与模型都在
+  assert.deepEqual(adapter.balanceRequests(account), [])
+  assert.equal(joinUrl(account.chatBaseUrl, spec.chatPath), 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(authHeaders(account).Authorization, 'Bearer sk-unit-test-deepseek')
+  assert.ok(spec.modelsPath, '模型列表端点仍在，provider_models 可用')
+  registry.dispose()
+})
+
+test('硅基流动：balancePreset=manual 是推荐替代，能给出可用余额视图', () => {
+  const config = resolveConfig({
+    accounts: [
+      {
+        id: 'sf',
+        provider: 'siliconflow',
+        apiKeyEnv: 'TEST_QWEN_KEY',
+        balancePreset: 'manual',
+        manual: { total: 88.88, currency: 'CNY', note: '控制台抄录' },
+      },
+    ],
+  })
+  const registry = new ConsoleRegistry(config, { env: TEST_ENV })
+  const info = registry.listAccounts()[0]
+  // spec 层面是 unsupported，但账户用 manual 覆盖后，UI 上走手工录入路径
+  assert.equal(info.balancePreset, 'manual')
+  assert.equal(info.hasApiKey, true)
+  registry.dispose()
+})
+
+test('硅基流动 mapper 仍可被自定义服务商显式使用（保留但标注已下线）', () => {
+  const payload = mapWith('siliconflow', 'siliconflow', {
     code: 20000,
     status: true,
     data: { balance: '0.88', chargeBalance: '88.00', totalBalance: '88.88' },
@@ -95,6 +157,10 @@ test('硅基流动 user/info → 总余额与赠金/充值拆分', () => {
   assert.equal(payload.total, 88.88)
   assert.equal(payload.breakdown?.['充值'], 88)
   assert.equal(payload.currency, 'CNY')
+  assert.ok(
+    payload.warnings?.some((w) => w.includes('2026-08-14')),
+    'mapper 输出必须提示该端点已停用',
+  )
 })
 
 test('智谱三种探针：旧版余额 / 账户报告 / 套餐配额', () => {

@@ -22,6 +22,7 @@ import type { DshToolExecution } from './dsh-types.ts'
 import type { ConsoleRegistry } from './core/registry.ts'
 import type { BalanceService } from './core/balance.ts'
 import type { InvocationService } from './core/invocation.ts'
+import type { DiscoveryState } from './autodiscover.ts'
 import { lossless } from './core/errors.ts'
 
 import { loadHostDeps } from './hostdeps.ts'
@@ -47,6 +48,8 @@ export interface ToolDeps {
   version: string
   hostDeps: { source: string; notes: string[] }
   dashboardUrl?: string
+  /** 凭证自动探测状态；缺省表示该宿主没有这项能力。 */
+  discovery?: DiscoveryState
 }
 
 const ACCOUNT_SCHEMA = {
@@ -294,14 +297,18 @@ export function registerTools(ctx: ToolHost, deps: ToolDeps): Array<() => void> 
     defineTool({
       name: 'provider_status',
       description:
-        '查看插件运行状态：版本、宿主 defineTool 来源、已注册服务商/账户数、缓存与自动刷新配置、主机白名单、看板地址、配置警告。' +
-        '排查「插件没生效 / 余额查不到 / 调用被拒」时先看这里。',
+        '查看插件运行状态：版本、宿主 defineTool 来源、已注册服务商/账户数、' +
+        '凭证自动探测结果（autoDiscover 开关、探测到几个、每个服务商已配置/未配置）、' +
+        '缓存与自动刷新配置、主机白名单、看板地址、配置警告。' +
+        '排查「插件没生效 / 余额查不到 / 调用被拒 / 为什么没有账户」时先看这里。',
       parameters: {},
       output: {
         schema: { type: 'object', additionalProperties: true },
         render: (_args: unknown, value: unknown) => [{ type: 'text', text: renderStatus(value as StatusPayload) }],
       },
       async execute() {
+        // 探测可能是异步的（宿主服务晚挂载）：等首轮结果，但绝不无限期阻塞
+        const discovery = await settledDiscovery(deps.discovery)
         return lossless({
           version: deps.version,
           hostDefineTool: deps.hostDeps.source,
@@ -317,7 +324,8 @@ export function registerTools(ctx: ToolHost, deps: ToolDeps): Array<() => void> 
           allowRawRequests: deps.config.call.allowRawRequests,
           allowedHosts: deps.registry.allowedHosts(),
           dashboardUrl: deps.dashboardUrl,
-          warnings: deps.config.warnings,
+          autoDiscover: discovery,
+          warnings: [...deps.config.warnings, ...discovery.warnings],
         })
       },
     }),
@@ -326,12 +334,23 @@ export function registerTools(ctx: ToolHost, deps: ToolDeps): Array<() => void> 
   return disposers
 }
 
+interface AutoDiscoverStatus {
+  enabled: boolean
+  serviceAvailable: boolean | null
+  pending: boolean
+  discovered: number
+  /** 探测到密钥但没建账户的服务商（显式配置优先 / 服务商未注册等）。 */
+  skipped: Array<{ provider: string; reason: string }>
+  providers: Array<{ provider: string; label: string; keyEnv: string; configured: boolean; source?: string; note?: string }>
+  warnings: string[]
+}
+
 interface StatusPayload {
   version: string
   hostDefineTool: string
   hostDepsNotes: string[]
   providers: string[]
-  accounts: Array<{ id: string; provider: string; hasApiKey: boolean; balanceKind: string }>
+  accounts: Array<{ id: string; provider: string; hasApiKey: boolean; balanceKind: string; discovered?: boolean }>
   cacheTtlMs: number
   autoRefreshMs: number
   concurrency: number
@@ -341,7 +360,56 @@ interface StatusPayload {
   allowRawRequests: boolean
   allowedHosts: string[]
   dashboardUrl?: string
+  autoDiscover?: AutoDiscoverStatus
   warnings: string[]
+}
+
+/**
+ * 诊断工具里等首轮自动探测落定：最多等 `AUTO_DISCOVER_WAIT_MS`。
+ * 超时不算失败 —— 报告里会标 `pending=true`，模型据此知道稍后再看。
+ */
+const AUTO_DISCOVER_WAIT_MS = 2000
+
+async function settledDiscovery(state: DiscoveryState | undefined): Promise<AutoDiscoverStatus> {
+  if (!state) {
+    return {
+      enabled: false,
+      serviceAvailable: null,
+      pending: false,
+      discovered: 0,
+      skipped: [],
+      providers: [],
+      warnings: [],
+    }
+  }
+  let pending = state.pending
+  if (pending) {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, AUTO_DISCOVER_WAIT_MS)
+      ;(timer as unknown as { unref?: () => void }).unref?.()
+    })
+    await Promise.race([state.settled.catch(() => undefined), timeout])
+    if (timer) clearTimeout(timer)
+    pending = state.pending
+  }
+  const report = state.report
+  return {
+    enabled: state.enabled,
+    serviceAvailable: state.serviceAvailable,
+    pending,
+    discovered: report?.discovered.length ?? 0,
+    skipped: report?.skipped ?? [],
+    providers: (report?.providers ?? []).map((item) => ({
+      provider: item.provider,
+      label: item.label,
+      keyEnv: item.keyEnv,
+      configured: item.configured,
+      source: item.source,
+      note: item.note,
+    })),
+    warnings: report?.warnings ?? [],
+  }
 }
 
 function renderStatus(value: StatusPayload): string {
@@ -350,12 +418,46 @@ function renderStatus(value: StatusPayload): string {
     '',
     `- 版本：${value.version} · defineTool 来源：${value.hostDefineTool}`,
     `- 服务商：${value.providers.length} 个（${value.providers.join(', ')}）`,
-    `- 账户：${value.accounts.length} 个 · 已配置密钥 ${value.accounts.filter((a) => a.hasApiKey).length} 个`,
+    `- 账户：${value.accounts.length} 个 · 已配置密钥 ${value.accounts.filter((a) => a.hasApiKey).length} 个` +
+      (value.accounts.some((a) => a.discovered)
+        ? ` · 其中自动探测 ${value.accounts.filter((a) => a.discovered).length} 个`
+        : ''),
     `- 余额缓存：${value.cacheTtlMs}ms · 自动刷新：${value.autoRefreshMs ? `${value.autoRefreshMs}ms` : '关闭'} · 并发 ${value.concurrency}`,
     `- 请求：超时 ${value.requestTimeoutMs}ms · 重试 ${value.retries} · stream ${value.allowStream ? '开' : '关'} · raw ${value.allowRawRequests ? '开' : '关'}`,
     `- 主机白名单：${value.allowedHosts.join(', ') || '（空）'}`,
   ]
   if (value.dashboardUrl) lines.push(`- 本地看板：${value.dashboardUrl}`)
+
+  const discovery = value.autoDiscover
+  if (discovery) {
+    const availability =
+      discovery.serviceAvailable === false
+        ? '不可用（宿主没有 credentials 服务）'
+        : discovery.serviceAvailable === null
+          ? '未知（首轮探测未落定）'
+          : '可用'
+    lines.push(
+      '',
+      '### 凭证自动探测',
+      '',
+      `- 开关：${discovery.enabled ? '已开启（autoDiscover=true）' : '已关闭（autoDiscover=false）'}`,
+      `- credentials 服务：${availability}`,
+      `- 探测到：${discovery.discovered} 个服务商已生成账户`,
+    )
+    if (discovery.pending) lines.push('- 状态：首轮探测仍在进行，稍后重新查询可看到完整结果')
+    if (discovery.skipped.length) {
+      lines.push('', '探测到密钥但未建账户：', ...discovery.skipped.map((item) => `- \`${item.provider}\`：${item.reason}`))
+    }
+    if (discovery.providers.length) {
+      lines.push('', '| 服务商 | 凭证变量 | 状态 | 说明 |', '| --- | --- | --- | --- |')
+      for (const item of discovery.providers) {
+        const state = item.configured ? '已配置' : '未配置'
+        const note = item.note ?? (item.source ? `来源 ${item.source}` : '—')
+        lines.push(`| \`${item.provider}\` | ${item.keyEnv ? `\`${item.keyEnv}\`` : '—'} | ${state} | ${note} |`)
+      }
+    }
+  }
+
   if (value.hostDepsNotes.length) lines.push('', '宿主依赖：', ...value.hostDepsNotes.map((n) => `- ${n}`))
   if (value.warnings.length) lines.push('', '配置警告：', ...value.warnings.map((w) => `- ${w}`))
   const missing = value.accounts.filter((a) => !a.hasApiKey)

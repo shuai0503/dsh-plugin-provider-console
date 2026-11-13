@@ -142,7 +142,19 @@ registerMapper('moonshot', (ctx) => {
   }
 })
 
-/** SiliconFlow: { code:20000, data:{balance,chargeBalance,totalBalance,...} } */
+/**
+ * @deprecated 硅基流动的 `/user/info` 已于 2026-08-14 停用（官方 Release Notes
+ * `[API Service Adjustment] /user/info Endpoint Deprecation`），替代余额接口尚未公布，
+ * 因此内置的 `siliconflow` spec 已改为 `balance.kind = 'unsupported'`，**不会再构造
+ * 该端点的请求**，这个 mapper 在默认配置下不会被调用。
+ *
+ * 之所以保留而不是删除：字段形状（`data.balance` / `chargeBalance` / `totalBalance`）
+ * 是官方历史契约，若将来公布替代接口且字段沿用，或用户把自定义 provider 的
+ * `balance.mapper` 显式设为 `siliconflow` 指向自建代理，仍然可用。
+ * 若官方公布新接口且字段不同，应新增一个 mapper 而不是改这个。
+ *
+ * SiliconFlow: { code:20000, data:{balance,chargeBalance,totalBalance,...} }
+ */
 registerMapper('siliconflow', (ctx) => {
   const root = requireObject(bodyOf(ctx), ctx, '硅基流动响应')
   const data = requireObject(root.data, ctx, '硅基流动 data')
@@ -158,7 +170,8 @@ registerMapper('siliconflow', (ctx) => {
     total,
     breakdown,
     available: total > 0,
-    note: noteFromProbe(ctx),
+    note: noteFromProbe(ctx) ?? '硅基流动 /user/info 已于 2026-08-14 停用，本结果来自自定义端点，仅供参考。',
+    warnings: ['硅基流动官方余额接口已停用（2026-08-14），此映射仅在自定义 provider 显式指定时使用。'],
   }
 })
 

@@ -4,7 +4,7 @@
 
 > Provider console for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH): check balances and quotas across multiple LLM providers, and call any OpenAI-compatible endpoint through one tool.
 
-- 多账户余额查询：DeepSeek、Kimi、硅基流动走官方余额接口，实时读数
+- 多账户余额查询：DeepSeek、Kimi（国内/国际）走官方余额接口，实时读数
 - 套餐配额查询：智谱 GLM Coding Plan 按 5 小时 / 周 / 月窗口显示用量
 - 没有余额接口的平台不编造数字，明确标「不支持」并给出替代方案
 - 通用调用：`chat/completions`、`/models`、embeddings、任意专有端点
@@ -17,11 +17,39 @@
 dsh plugin --profile <你的profile> add dsh-plugin-provider-console
 ```
 
-装完重启 DSH。首次启动不会读任何密钥，也不会发任何网络请求——账户需要你显式配置。
+装完重启 DSH 即可。
 
-## 配置
+## 零配置：自动识别已配置的服务商
 
-在 profile 的 `cordis.patch.yml` 里挂载：
+**大多数用户不需要写任何配置。**
+
+如果你的 DSH 已经配过某个服务商的 API Key（`DEEPSEEK_API_KEY` / `MOONSHOT_API_KEY` /
+`ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `SILICONFLOW_API_KEY` 等），插件启动时会自动探测到，
+直接生成对应账户。装完就能问「我还剩多少钱」。
+
+设计上刻意注意了三点：
+
+- **只探测存在性，不读值** —— 首轮只调用 `describe`，确认「配没配」；真正取密钥发生在你第一次查余额时
+- **不会发任何网络请求** —— 探测只问 DSH 的凭据服务，不碰外部接口
+- **按需降级** —— 宿主没有凭据服务时静默跳过，其余功能完全不受影响（`credentials` 不是硬依赖）
+
+配置项：
+
+```yaml
+config:
+  autoDiscover: true          # 默认 true，设为 false 可完全关闭自动探测
+  autoDiscoverProviders: []   # 可选，只探测点名的服务商，如 [deepseek, zhipu]
+```
+
+探测结果可以随时问模型：「运行 `provider_status`」，它会告诉你开关状态、探测到几个、
+以及每个服务商是「已配置」还是「未配置」。
+
+> **顺序很重要**：你显式配置的账户**永远优先**。自动探测遇到同名账户会跳过，一个字节都不改。
+
+## 手动配置（需要多账户或自定义时）
+
+自动探测只覆盖「一个服务商一个账户」的常见情况。要管理多个账户、自定义 label、
+设置预警阈值时，再在 profile 的 `cordis.patch.yml` 里挂载：
 
 ```yaml
 - insert:
@@ -58,7 +86,7 @@ export DEEPSEEK_API_KEY="sk-..."
 | `deepseek` | DeepSeek | 官方接口 · ¥/$ 余额 |
 | `moonshot-cn` | Kimi / 月之暗面（国内） | 官方接口 · ¥ 余额 |
 | `moonshot-global` | Kimi / Moonshot（国际） | 官方接口 · $ 余额 |
-| `siliconflow` | 硅基流动 | 官方接口 · ¥ 余额 |
+| `siliconflow` | 硅基流动 | 无按 Key 余额接口（官方已于 2026-08-14 停用 `/user/info`） |
 | `zhipu` | 智谱 GLM / BigModel | 非官方端点（best-effort），支持套餐配额 |
 | `dashscope` | 通义千问 / 阿里云百炼 | 无按 Key 余额接口 |
 | `volcengine` | 火山方舟 / 豆包 | 无按 Key 余额接口 |
@@ -67,8 +95,15 @@ export DEEPSEEK_API_KEY="sk-..."
 | 自定义 | 任意 OpenAI 兼容端点 | 声明式 `balanceMap` 或 `unsupported` |
 
 **关于「无余额接口」的诚实处理**：百炼主账号余额要走阿里云 `BssOpenApi`（AK/SK + RPC 签名 + RAM 授权），
-火山方舟用量要做 IAM HMAC 签名——这些都不是「拿 API Key 就能查」。插件不会猜测未核实过的端点，
-而是明确标注「不支持」，并给出两种替代：`balancePreset: manual` 手工录入、`balancePreset: quota` 看配额窗口。
+火山方舟用量要做 IAM HMAC 签名——这些都不是「拿 API Key 就能查」。硅基流动则是另一种情况：
+原本官方提供了 `/user/info`，但平台已公告该端点自 **2026-08-14** 起停用，替代接口尚未公布。
+插件不会猜测未核实过的端点，而是明确标注「不支持」，并给出两种替代：`balancePreset: manual` 手工录入、
+`balancePreset: quota` 看配额窗口。
+
+> ⚠️ 硅基流动的**对话调用不受影响**——`chatBaseUrl` / `modelsPath` 照常可用，只是余额看不了。
+> 停用公告见 [Release Notes 2026.08.11](https://docs.siliconflow.com/cn/release-notes/overview)：
+> "This API will be officially retired on **August 14, 2026 (Friday)** and will no longer be available thereafter."
+> 注意其 API Reference 页面目前仍列着该端点，属文档滞后，以 Release Notes 为准。
 
 国内站与国际站 Key 不通用（Kimi、Z.AI 皆然），所以拆成独立 provider id，避免 401 被误判成余额问题。
 
@@ -96,7 +131,11 @@ export DEEPSEEK_API_KEY="sk-..."
 
 ## 安全设计
 
-- **密钥不出本机**：只从环境变量读取，配置树上不落明文，工具输出一律脱敏
+- **密钥不出本机**：只从环境变量或宿主凭据服务读取，配置树上不落明文，工具输出一律脱敏
+- **自动探测只问存在性**：首轮只用 `describe` 判断「配没配」，不取值；密钥在首次查询余额时才经 `resolve` 读取
+- **密钥不进配置对象**：自动探测到的密钥只存在注册中心的私有表里，不写入 `AccountConfig` / `ResolvedConfig`，
+  不出现在报告、日志或任何工具返回值中
+- **不硬依赖宿主服务**：`credentials` 走 `ctx.get()` 可选获取，宿主没有该服务时静默降级，插件照常加载
 - **浏览器半端不碰密钥**：左侧栏面板只是 iframe 壳，数据全部由宿主的本地看板页面提供
 - **看板只绑 `127.0.0.1`**：不监听外网接口
 - **出站主机白名单**：`raw` 模式和自定义 `baseUrl` 受白名单约束，默认自动并入已配置账户的端点

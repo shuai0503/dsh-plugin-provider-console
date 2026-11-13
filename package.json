@@ -1,111 +1,111 @@
 ﻿{
-    "name":  "dsh-plugin-provider-console",
-    "version":  "0.1.0",
-    "description":  "DeepSeek Harness 鎻掍欢锛氬璐︽埛浣欓鏌ヨ/鍒锋柊 + 閫氱敤妯″瀷 API 璋冪敤鍏ュ彛銆侾rovider console for DeepSeek Harness: multi-account balance checks and a generic OpenAI-compatible invocation tool.",
-    "type":  "module",
-    "main":  "./lib/index.js",
-    "types":  "./lib/index.d.ts",
-    "exports":  {
-                    ".":  {
-                              "types":  "./lib/index.d.ts",
-                              "default":  "./lib/index.js"
-                          },
-                    "./server":  {
-                                     "types":  "./lib/server.d.ts",
-                                     "default":  "./lib/server.js"
-                                 },
-                    "./providers":  {
-                                        "types":  "./lib/providers/index.d.ts",
-                                        "default":  "./lib/providers/index.js"
-                                    },
-                    "./cloud-signing":  {
-                                            "types":  "./lib/providers/cloud-signing.d.ts",
-                                            "default":  "./lib/providers/cloud-signing.js"
-                                        },
-                    "./prompt-section":  {
-                                             "types":  "./lib/prompt-section.d.ts",
-                                             "default":  "./lib/prompt-section.js"
-                                         },
-                    "./client":  "./client.js",
-                    "./prompts/*":  "./prompts/*"
-                },
-    "dsh":  {
-                "client":  {
-                               "platform":  "web",
-                               "inject":  [
-                                              "@deepseek-ai/dsh-client-ui-sidebar",
-                                              "@deepseek-ai/dsh-client-ui-layout"
-                                          ]
-                           }
-            },
-    "files":  [
-                  "lib",
-                  "src",
-                  "public",
-                  "prompts",
-                  "client.js",
-                  "cordis.patch.yml",
-                  "examples",
-                  "README.md",
-                  "LICENSE"
-              ],
-    "engines":  {
-                    "dsh":  "\u003e=0.2.0-rc.2 || \u003e=0.2.1-rc.2 || \u003e=0.2.2-rc.1",
-                    "node":  "\u003e=22.18.0"
-                },
-    "scripts":  {
-                    "build":  "tsc -p tsconfig.build.json",
-                    "prepublishOnly":  "tsc -p tsconfig.build.json",
-                    "test":  "node --test",
-                    "typecheck":  "tsc --noEmit",
-                    "demo":  "node examples/demo.ts",
-                    "dashboard":  "node --input-type=module -e \"import(\u0027./lib/server.js\u0027).then(({ createConsole }) =\u003e { const c = createConsole({ dashboard: { enabled: true, port: 8788 } }); console.log(\u0027dashboard:\u0027, c.dashboard?.url ?? \u0027disabled\u0027) })\""
-                },
-    "keywords":  [
-                     "dsh-plugin",
-                     "deepseek-harness",
-                     "dsh",
-                     "cordis",
-                     "plugin",
-                     "balance",
-                     "quota",
-                     "api-console",
-                     "deepseek",
-                     "qwen",
-                     "dashscope",
-                     "zhipu",
-                     "kimi",
-                     "moonshot",
-                     "siliconflow",
-                     "openai-compatible",
-                     "cost-tracking"
-                 ],
-    "peerDependencies":  {
-                             "@deepseek-ai/cordis":  "^4.0.4 || \u003e=4.0.6-alpha.2 \u003c5.0.0",
-                             "@deepseek-ai/dsh-tools":  "\u003e=0.2.0-rc.2 || \u003e=0.2.1-rc.2 || \u003e=0.2.2-rc.1"
-                         },
-    "peerDependenciesMeta":  {
-                                 "@deepseek-ai/cordis":  {
-                                                             "optional":  true
-                                                         },
-                                 "@deepseek-ai/dsh-tools":  {
-                                                                "optional":  true
-                                                            }
-                             },
-    "devDependencies":  {
-                            "@types/node":  "^22.10.0",
-                            "typescript":  "^5.7.0"
-                        },
-    "license":  "MIT",
-    "repository":  {
-                       "type":  "git",
-                       "url":  "git+https://github.com/shuai0503/dsh-plugin-provider-console.git"
-                   },
-    "homepage":  "https://github.com/shuai0503/dsh-plugin-provider-console#readme",
-    "bugs":  {
-                 "url":  "https://github.com/shuai0503/dsh-plugin-provider-console/issues"
-             },
-    "publishConfig":  {
-                          "access":  "public"
-                      }
+  "name": "dsh-plugin-provider-console",
+  "version": "0.2.2",
+  "description": "DeepSeek Harness 插件：多账户余额查询/刷新 + 通用模型 API 调用入口。Provider console for DeepSeek Harness: multi-account balance checks and a generic OpenAI-compatible invocation tool.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./server": {
+      "types": "./lib/server.d.ts",
+      "default": "./lib/server.js"
+    },
+    "./providers": {
+      "types": "./lib/providers/index.d.ts",
+      "default": "./lib/providers/index.js"
+    },
+    "./cloud-signing": {
+      "types": "./lib/providers/cloud-signing.d.ts",
+      "default": "./lib/providers/cloud-signing.js"
+    },
+    "./prompt-section": {
+      "types": "./lib/prompt-section.d.ts",
+      "default": "./lib/prompt-section.js"
+    },
+    "./client": "./client.js",
+    "./prompts/*": "./prompts/*"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout"
+      ]
+    }
+  },
+  "files": [
+    "lib",
+    "src",
+    "public",
+    "prompts",
+    "client.js",
+    "cordis.patch.yml",
+    "examples",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "dsh": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-rc.1",
+    "node": ">=22.18.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "tsc -p tsconfig.build.json",
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "demo": "node examples/demo.ts",
+    "dashboard": "node --input-type=module -e \"import('./lib/server.js').then(({ createConsole }) => { const c = createConsole({ dashboard: { enabled: true, port: 8788 } }); console.log('dashboard:', c.dashboard?.url ?? 'disabled') })\""
+  },
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "dsh",
+    "cordis",
+    "plugin",
+    "balance",
+    "quota",
+    "api-console",
+    "deepseek",
+    "qwen",
+    "dashscope",
+    "zhipu",
+    "kimi",
+    "moonshot",
+    "siliconflow",
+    "openai-compatible",
+    "cost-tracking"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4 || >=4.0.6-alpha.2 <5.0.0",
+    "@deepseek-ai/dsh-tools": ">=0.2.0-rc.2 || >=0.2.1-rc.2 || >=0.2.2-rc.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shuai0503/dsh-plugin-provider-console.git"
+  },
+  "homepage": "https://github.com/shuai0503/dsh-plugin-provider-console#readme",
+  "bugs": {
+    "url": "https://github.com/shuai0503/dsh-plugin-provider-console/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
 }

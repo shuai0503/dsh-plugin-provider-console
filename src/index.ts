@@ -26,6 +26,8 @@ import { lossless } from './core/errors.ts'
 import { registerMapper } from './providers/index.ts'
 import type { BalanceMapper } from './providers/mappers.ts'
 import { registerCloudSigning } from './providers/cloud-signing.ts'
+import type { DiscoverySnapshot } from './autodiscover.ts'
+import { isCredentialSeam, type CredentialSeam } from './autodiscover.ts'
 import {
   DEFAULT_PROMPT_SECTION,
   PROMPT_SECTION_NAME,
@@ -33,9 +35,14 @@ import {
 } from './prompt-section.ts'
 
 export const name = 'provider-console'
-export const version = '0.1.0'
+export const version = '0.2.2'
 
-/** 只硬依赖 tools；其余宿主能力全部可选。 */
+/**
+ * 只硬依赖 tools；其余宿主能力全部可选。
+ *
+ * 特别地 `credentials` **不**写进 inject：缺少该服务的宿主会因硬依赖而加载失败，
+ * 而我们只把它当作增强能力（用于凭证自动探测），拿不到就静默跳过。
+ */
 export const inject = ['tools']
 
 export type { ConsoleConfig }
@@ -44,6 +51,8 @@ export type { ConsoleConfig }
 export interface ProviderConsoleApi {
   readonly version: string
   readonly config: ResolvedConfig
+  /** 自动探测状态（不含任何密钥值）。 */
+  readonly discovery: DiscoverySnapshot
   /** 注入全新协议的服务商实现（可覆盖内置 id）。 */
   registerProvider(provider: ProviderSpec | ProviderAdapter): () => void
   /** 注入自定义余额响应映射器。 */
@@ -55,6 +64,8 @@ export interface ProviderConsoleApi {
   refreshBalances(options?: RefreshOptions): Promise<BalanceReport>
   call(options: CallOptions): Promise<InvocationResult>
   models(accountId: string, options?: { refresh?: boolean }): Promise<ModelsResult>
+  /** 手动重跑一轮凭证自动探测。 */
+  rediscover(): Promise<DiscoverySnapshot>
   /** 直接拿底层 Console（脚本/测试用）。 */
   raw(): Console
 }
@@ -74,7 +85,10 @@ interface Context {
 
 export function apply(ctx: Context, config: ConsoleConfig = {}): void {
   const log = createLogger(ctx)
-  const consoleInstance = createConsole(config, { log })
+  // credentials 是**可选**依赖：ctx.get() 拿不到就返回 undefined，
+  // 自动探测静默跳过，工具/余额/看板照常工作（见 inject 的说明）。
+  const credentials = credentialsOf(ctx, log)
+  const consoleInstance = createConsole(config, { log, credentials })
   const { registry, balances, invocation, config: resolved } = consoleInstance
 
   for (const note of hostDeps.notes) log(`宿主依赖: ${note}`)
@@ -111,12 +125,14 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
         version,
         hostDeps: { source: hostDeps.source, notes: hostDeps.notes },
         dashboardUrl: consoleInstance.dashboard?.url,
+        discovery: consoleInstance.discovery,
       })
     : []
 
   const api: ProviderConsoleApi = {
     version,
     config: resolved,
+    discovery: consoleInstance.discoverySnapshot(),
     registerProvider: (provider) => registry.registerProvider(provider),
     registerMapper: (mapperName, mapper) => registerMapper(mapperName, mapper),
     registerAccount: (account) => void registry.registerAccount(account),
@@ -126,6 +142,10 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
     refreshBalances: (options) => balances.refresh(options),
     call: (options) => invocation.call(options),
     models: (accountId, options) => invocation.models(accountId, options),
+    rediscover: async () => {
+      await consoleInstance.rediscover(credentials)
+      return consoleInstance.discoverySnapshot()
+    },
     raw: () => consoleInstance,
   }
   provideService(ctx, 'providerConsole', api)
@@ -261,6 +281,34 @@ function provideService(ctx: Context, key: string, value: unknown): void {
     ctx.set?.(key, value)
   } catch {
     // 服务注册不可用时不阻塞插件主体能力
+  }
+}
+
+/**
+ * 可选地取宿主 credentials 服务。
+ *
+ * 三条护栏，全部为了「拿不到也不能失败」：
+ *  1. 只用 `ctx.get('credentials')` —— 不写进 inject，所以宿主没有该服务时
+ *     内核不会在激活阶段因缺依赖而把整个插件打成 failed；
+ *  2. `ctx.get` 本身可能抛（Cordis 的 Proxy getter / 上下文未激活），整体 try 包裹；
+ *  3. 取到的对象若两个方法都没有，视同不可用，避免把垃圾对象传下去。
+ */
+function credentialsOf(ctx: Context, log: LogFn): CredentialSeam | undefined {
+  try {
+    const getter = (ctx as Record<string, unknown>).get
+    if (typeof getter !== 'function') {
+      log('宿主上下文没有 ctx.get()，跳过凭证自动探测（其余能力不受影响）')
+      return undefined
+    }
+    const service = (getter as (name: string) => unknown).call(ctx, 'credentials')
+    if (!isCredentialSeam(service)) {
+      log('宿主未提供 credentials 服务，跳过凭证自动探测（其余能力不受影响）')
+      return undefined
+    }
+    return service
+  } catch (error) {
+    log(`读取 credentials 服务失败，跳过凭证自动探测: ${(error as Error).message}`)
+    return undefined
   }
 }
 

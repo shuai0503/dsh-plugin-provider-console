@@ -93,6 +93,12 @@ export function resolveConfig(config: ConsoleConfig = {}, cwd: string = process.
     customProviders,
     warnings,
     includeBuiltinProviders: config.includeBuiltinProviders !== false,
+    autoDiscover: {
+      enabled: config.autoDiscover !== false,
+      providers: (config.autoDiscoverProviders ?? []).filter(
+        (id): id is string => typeof id === 'string' && Boolean(id.trim()),
+      ),
+    },
     http: {
       timeoutMs: clamp(config.requestTimeoutMs ?? 15_000, 1000, 300_000),
       retries: clamp(config.retries ?? 1, 0, 5),

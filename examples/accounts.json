@@ -61,7 +61,13 @@
     "provider": "siliconflow",
     "label": "硅基流动",
     "apiKeyEnv": "SILICONFLOW_API_KEY",
-    "defaultModel": "Qwen/Qwen3-8B"
+    "defaultModel": "Qwen/Qwen3-8B",
+    "balancePreset": "manual",
+    "manual": {
+      "total": 0,
+      "currency": "CNY",
+      "note": "官方 /user/info 已于 2026-08-14 停用，无替代接口；此值需从控制台 https://cloud.siliconflow.cn/ 抄录"
+    }
   },
   {
     "id": "ark",

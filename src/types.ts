@@ -198,6 +198,22 @@ export interface AccountInfo {
   models?: string[]
   notes?: string
   enabled: boolean
+  /** true = 该账户由凭证自动探测生成（autoDiscover），非用户显式配置。 */
+  discovered?: boolean
+}
+
+/**
+ * 自动探测生成的账户：密钥值与显式账户的 `apiKeyEnv` 一样只在内存里，
+ * 但**不**进入 `AccountConfig` / `ResolvedConfig`，避免配置文件与工具输出带出明文。
+ */
+export interface DiscoveredAccount {
+  id: string
+  provider: string
+  label: string
+  /** 命中的凭证引用名（即环境变量名），用于展示来源。 */
+  apiKeyEnv: string
+  /** 已解析的密钥值；只允许流向 `ResolvedAccount.apiKey`。 */
+  apiKey: string
 }
 
 export interface ProviderInfo {
@@ -432,6 +448,15 @@ export interface ConsoleConfig {
   providersDir?: string | string[]
   includeBuiltinProviders?: boolean
 
+  /**
+   * 从宿主 credentials 服务自动探测已配置的 API Key 并生成账户；默认 true。
+   * 显式配置的账户优先，自动账户不会覆盖同名 id。宿主不提供 credentials 服务时
+   * 静默跳过，其余能力不受影响。
+   */
+  autoDiscover?: boolean
+  /** 参与自动探测的服务商 id；缺省用内置的 9 个。 */
+  autoDiscoverProviders?: string[]
+
   requestTimeoutMs?: number
   retries?: number
   retryBaseMs?: number
@@ -471,6 +496,11 @@ export interface ResolvedConfig {
   customProviders: CustomProviderSpec[]
   warnings: string[]
   includeBuiltinProviders: boolean
+  autoDiscover: {
+    enabled: boolean
+    /** 参与探测的服务商 id 白名单；空数组 = 全部内置 9 个。 */
+    providers: string[]
+  }
   http: {
     timeoutMs: number
     retries: number

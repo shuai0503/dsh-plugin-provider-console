@@ -62,7 +62,13 @@
             provider: siliconflow
             label: 硅基流动
             apiKeyEnv: SILICONFLOW_API_KEY
-            defaultModel: Qwen/Qwen3-8B
+            # 官方 /user/info 已于 2026-08-14 停用（Release Notes 2026.08.11），
+            # 替代余额接口尚未公布 → 只能手工录入，或去控制台查看。
+            balancePreset: manual
+            manual:
+              total: 0
+              currency: CNY
+              note: 控制台抄录值，非实时（官方余额接口已停用）
 
         # ---------- 自定义服务商（可选，声明式接入任意 OpenAI 兼容端点）----------
         providersDir: C:/Users/24335/.dsh/provider-console/providers
