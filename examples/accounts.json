@@ -1,0 +1,75 @@
+[
+  {
+    "id": "ds-main",
+    "provider": "deepseek",
+    "label": "DeepSeek 主账号",
+    "apiKeyEnv": "DEEPSEEK_API_KEY",
+    "defaultModel": "deepseek-chat",
+    "lowBalanceThreshold": 20
+  },
+  {
+    "id": "ds-backup",
+    "provider": "deepseek",
+    "label": "DeepSeek 备用账号",
+    "apiKeyEnv": "DEEPSEEK_API_KEY_2",
+    "lowBalanceThreshold": 20
+  },
+  {
+    "id": "kimi-cn",
+    "provider": "moonshot-cn",
+    "label": "Kimi 国内站",
+    "apiKeyEnv": "MOONSHOT_API_KEY",
+    "defaultModel": "kimi-k2",
+    "lowBalanceThreshold": 20
+  },
+  {
+    "id": "kimi-global",
+    "provider": "moonshot-global",
+    "label": "Kimi 国际站",
+    "apiKeyEnv": "MOONSHOT_GLOBAL_API_KEY"
+  },
+  {
+    "id": "qwen-bj",
+    "provider": "dashscope",
+    "label": "通义千问 / 百炼（北京）",
+    "apiKeyEnv": "DASHSCOPE_API_KEY",
+    "defaultModel": "qwen-plus",
+    "balancePreset": "manual",
+    "manual": {
+      "total": 0,
+      "currency": "CNY",
+      "note": "百炼无按 Key 查询余额的接口；此处为控制台手工抄录值。"
+    }
+  },
+  {
+    "id": "glm-payg",
+    "provider": "zhipu",
+    "label": "智谱 GLM 按量付费",
+    "apiKeyEnv": "ZHIPU_API_KEY",
+    "balancePreset": "money",
+    "defaultModel": "glm-4-plus"
+  },
+  {
+    "id": "glm-plan",
+    "provider": "zhipu",
+    "label": "智谱 GLM Coding Plan",
+    "apiKeyEnv": "ZHIPU_PLAN_API_KEY",
+    "balancePreset": "quota"
+  },
+  {
+    "id": "siliconflow",
+    "provider": "siliconflow",
+    "label": "硅基流动",
+    "apiKeyEnv": "SILICONFLOW_API_KEY",
+    "defaultModel": "Qwen/Qwen3-8B"
+  },
+  {
+    "id": "ark",
+    "provider": "volcengine",
+    "label": "火山方舟 / 豆包",
+    "apiKeyEnv": "ARK_API_KEY",
+    "models": ["ep-20241101000000-xxxxx"],
+    "balancePreset": "manual",
+    "manual": { "total": 0, "currency": "CNY", "note": "方舟按 Key 无余额接口，请到控制台核对。" }
+  }
+]

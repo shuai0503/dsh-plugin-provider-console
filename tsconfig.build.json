@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true,
+    "verbatimModuleSyntax": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "typeRoots": ["C:/Users/24335/Desktop/workbuddy/dsh-plugin-provider-console/node_modules/@types"],
+    "types": ["node"],
+    "outDir": "lib",
+    "rootDir": "src",
+    "declaration": true,
+    "sourceMap": false,
+    "noEmit": false
+  },
+  "include": ["src"]
+}

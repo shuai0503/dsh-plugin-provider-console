@@ -1,0 +1,35 @@
+[
+  {
+    "id": "my-proxy",
+    "label": "自建 OpenAI 兼容中转",
+    "chatBaseUrl": "https://proxy.example.com/v1",
+    "balanceBaseUrl": "https://proxy.example.com",
+    "auth": { "scheme": "bearer" },
+    "chatPath": "/chat/completions",
+    "modelsPath": "/models",
+    "defaultModels": ["model-a", "model-b"],
+    "balance": {
+      "kind": "money",
+      "method": "GET",
+      "url": "/v1/account/balance",
+      "note": "中转站自用余额接口；字段按下方 balanceMap 声明式映射。"
+    },
+    "balanceMap": {
+      "total": "data.available",
+      "currency": "data.currency",
+      "breakdown": {
+        "赠金": "data.gift",
+        "充值": "data.cash"
+      }
+    },
+    "notes": "任何 OpenAI 兼容端点都可以这样接入，无需改插件源码。"
+  },
+  {
+    "id": "ollama-local",
+    "label": "本机 Ollama",
+    "chatBaseUrl": "http://127.0.0.1:11434/v1",
+    "auth": { "scheme": "bearer" },
+    "defaultModels": ["qwen2.5:7b"],
+    "balance": { "kind": "unsupported", "note": "本地模型不涉及账户余额。" }
+  }
+]

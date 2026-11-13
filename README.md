@@ -1,0 +1,129 @@
+# dsh-plugin-provider-console
+
+**DeepSeek Harness 服务商控制台插件** —— 在一个地方查看所有 AI 服务商的余额/配额，并用统一的入口调用任意 OpenAI 兼容端点。
+
+> Provider console for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DSH): check balances and quotas across multiple LLM providers, and call any OpenAI-compatible endpoint through one tool.
+
+- 多账户余额查询：DeepSeek、Kimi、硅基流动走官方余额接口，实时读数
+- 套餐配额查询：智谱 GLM Coding Plan 按 5 小时 / 周 / 月窗口显示用量
+- 没有余额接口的平台不编造数字，明确标「不支持」并给出替代方案
+- 通用调用：`chat/completions`、`/models`、embeddings、任意专有端点
+- 本地实时看板（只绑 `127.0.0.1`）+ 左侧栏入口
+- 零运行时依赖：只用 Node 内置模块
+
+## 安装
+
+```bash
+dsh plugin --profile <你的profile> add dsh-plugin-provider-console
+```
+
+装完重启 DSH。首次启动不会读任何密钥，也不会发任何网络请求——账户需要你显式配置。
+
+## 配置
+
+在 profile 的 `cordis.patch.yml` 里挂载：
+
+```yaml
+- insert:
+    - id: provider-console
+      name: dsh-plugin-provider-console
+      config:
+        accounts:
+          - id: ds-main
+            provider: deepseek
+            label: DeepSeek 主账号
+            apiKeyEnv: DEEPSEEK_API_KEY
+            defaultModel: deepseek-chat
+            lowBalanceThreshold: 20
+```
+
+**密钥一律通过环境变量提供，配置文件里不写明文：**
+
+```powershell
+# Windows PowerShell
+$env:DEEPSEEK_API_KEY = "sk-..."
+```
+
+```bash
+# bash / Git Bash
+export DEEPSEEK_API_KEY="sk-..."
+```
+
+也可以把账户写成 JSON 文件放进 `accountsDir` 目录批量管理，见 [`examples/accounts.json`](./examples/accounts.json)。
+
+## 支持的平台
+
+| provider id | 平台 | 余额能力 |
+| --- | --- | --- |
+| `deepseek` | DeepSeek | 官方接口 · ¥/$ 余额 |
+| `moonshot-cn` | Kimi / 月之暗面（国内） | 官方接口 · ¥ 余额 |
+| `moonshot-global` | Kimi / Moonshot（国际） | 官方接口 · $ 余额 |
+| `siliconflow` | 硅基流动 | 官方接口 · ¥ 余额 |
+| `zhipu` | 智谱 GLM / BigModel | 非官方端点（best-effort），支持套餐配额 |
+| `dashscope` | 通义千问 / 阿里云百炼 | 无按 Key 余额接口 |
+| `volcengine` | 火山方舟 / 豆包 | 无按 Key 余额接口 |
+| `qianfan` | 百度千帆 | 无按 Key 余额接口 |
+| `hunyuan` | 腾讯混元 | 无按 Key 余额接口 |
+| 自定义 | 任意 OpenAI 兼容端点 | 声明式 `balanceMap` 或 `unsupported` |
+
+**关于「无余额接口」的诚实处理**：百炼主账号余额要走阿里云 `BssOpenApi`（AK/SK + RPC 签名 + RAM 授权），
+火山方舟用量要做 IAM HMAC 签名——这些都不是「拿 API Key 就能查」。插件不会猜测未核实过的端点，
+而是明确标注「不支持」，并给出两种替代：`balancePreset: manual` 手工录入、`balancePreset: quota` 看配额窗口。
+
+国内站与国际站 Key 不通用（Kimi、Z.AI 皆然），所以拆成独立 provider id，避免 401 被误判成余额问题。
+
+## 模型可见的工具
+
+| 工具 | 作用 |
+| --- | --- |
+| `provider_balances` | 查询/刷新全部或指定账户余额，输出 Markdown 表格 + 合计 + 预警 |
+| `provider_accounts` | 列出账户与服务商、运行时增删启停、重读凭据 |
+| `provider_models` | 拉取在线模型列表，失败回退静态清单并标注来源 |
+| `provider_call` | 通用 `chat/completions` 调用，支持 `dryRun` |
+| `provider_request` | 任意 method/path/body（embeddings、rerank、专有端点） |
+| `provider_status` | 插件诊断：白名单、缓存/重试配置、配置警告 |
+
+`provider_balances` 的输出示例：
+
+```
+## 账户余额（2026/11/6 01:58:08）
+| 账户 | 服务商 | 状态 | 余额 / 配额 | 构成 | 更新于 |
+| DeepSeek 主账号 | deepseek | 实时 | ¥112.95 | 赠金 ¥10.00 / 充值 ¥102.95 | 01:58:08 |
+| 通义千问 | dashscope | 手工 | ¥66.00 | — | 01:58:08 |
+合计：¥317.42（4 个账户）
+实时 3 · 缓存 0 · 失败 0 · 不支持 0 · 手工 1
+```
+
+## 安全设计
+
+- **密钥不出本机**：只从环境变量读取，配置树上不落明文，工具输出一律脱敏
+- **浏览器半端不碰密钥**：左侧栏面板只是 iframe 壳，数据全部由宿主的本地看板页面提供
+- **看板只绑 `127.0.0.1`**：不监听外网接口
+- **出站主机白名单**：`raw` 模式和自定义 `baseUrl` 受白名单约束，默认自动并入已配置账户的端点
+- **重试有边界**：只有网络错误 / 5xx / 限流会重试；401 / 402 / 解析错误立即失败，不会把鉴权失败刷成噪音
+
+## 开发
+
+```bash
+node --test        # 58 个测试
+npm run typecheck  # tsc --noEmit
+```
+
+源码是 TypeScript，**由 Node 原生类型剥离直接加载，不需要构建步骤**（`node >= 22.18`）。
+用 `dsh plugin add` 安装后即可直接运行，修改源码后重启 DSH 生效。
+
+```
+src/
+  index.ts          Cordis 入口，装配与卸载
+  server.ts         Console 门面
+  tools.ts          6 个模型可见工具
+  config.ts         配置解析与校验
+  core/             余额、调用、注册中心、HTTP 重试、错误语义
+  providers/        各平台协议适配（spec + mapper）
+```
+
+宿主接缝全部是可选降级：`ctx.tools` 不存在时仍能通过 `ctx.get('providerConsole')` 使用编程 API。
+
+## License
+
+MIT
