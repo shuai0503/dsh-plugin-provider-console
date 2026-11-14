@@ -5,79 +5,248 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>AI 服务商账户控制台</title>
 <style>
+  /* ==========================================================================
+     主题变量
+     --------------------------------------------------------------------------
+     同一个源文件服务两种场景：
+
+     1) 独立打开（http://127.0.0.1:8788/）—— 拿不到宿主 token，用本文件自带的
+        light/dark 兜底色（下面是 :root 与 html[data-theme="dark"]）。
+     2) 被宿主 iframe 内嵌 —— client.js 通过 postMessage 把宿主 body 上
+        --dsw-* token 的计算值推过来，setProperty 到 :root 上；优先级最高，
+        于是页面与宿主外观完全一致（亮色主题再也不会出现黑底白字）。
+
+     关键约定：**本地变量名一个都不改**（--bg/--panel/--text/…），只改它们的
+     「值来源」。下面 100+ 处引用因此完全不用动，且新增样式继续用本地名即可。
+     ========================================================================== */
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --border: #e3e6ec; --text: #1f2430;
-    --muted: #6b7280; --accent: #2f5fd0; --ok: #12855b; --warn: #b7791f;
-    --err: #c0392b; --soft: #f0f3f9; --code: #f7f8fb;
+    color-scheme: light;
+    /* —— 本地别名 ←（优先级从高到低）宿主 token / 下面为独立打开时的兜底 —— */
+    --bg: var(--dsw-alias-bg-base, #f6f7f9);
+    --panel: var(--dsw-alias-bg-layer-2, #ffffff);
+    --panel-2: var(--dsw-alias-bg-layer-1, #ffffff);
+    --border: var(--dsw-alias-border-l2, #e3e6ec);
+    --hairline: var(--dsw-alias-border-l1, #eceef2);
+    --text: var(--dsw-alias-label-primary, #1f2430);
+    --muted: var(--dsw-alias-label-secondary, #6b7280);
+    --faint: var(--dsw-alias-label-tertiary, #81858c);
+    --accent: var(--dsw-alias-state-business-primary, #2f5fd0);
+    --accent-fg: var(--dsw-alias-label-primary-foreground, #ffffff);
+    --ok: var(--dsw-alias-state-success-primary, #12855b);
+    --ok-bg: var(--dsw-alias-state-success-tertiary, #e8f6ef);
+    --warn: var(--dsw-alias-state-warn-primary, #b7791f);
+    --warn-bg: var(--dsw-alias-state-warn-tertiary, #fdf4e3);
+    --err: var(--dsw-alias-state-error-primary, #c0392b);
+    --idle: var(--dsw-alias-state-idle-primary, #d4d4d4);
+    --soft: var(--dsw-alias-interactive-bg-hover, #f0f3f9);
+    --soft-active: var(--dsw-alias-interactive-bg-active, #e6ebf5);
+    --code: var(--dsw-alias-markdown-code-block, #f7f8fb);
+
+    /* 材质 / 形状 */
+    --r-xs: var(--dsw-radius-xs, 4px);
+    --r-sm: var(--dsw-radius-sm, 8px);
+    --r-md: var(--dsw-radius-md, 12px);
+    --r-panel: var(--dsw-radius-panel, 28px);
+    --elev-soft: var(--dsw-elevation-soft, 0 0 0 .5px rgba(0,0,0,.06), 0 4px 16px 0 rgba(0,0,0,.03));
+    --elev-stroke: var(--dsw-elevation-stroke, 0 0 0 .5px rgba(0,0,0,.06));
+    --focus-w: var(--dsw-focus-ring-width, 2px);
+
+    /* 独立打开时的兜底色（宿主 token 缺席时才会用到） */
+    --bg-fallback: #f6f7f9;
+    --panel-fallback: #ffffff;
+    --text-fallback: #1f2430;
+    --muted-fallback: #6b7280;
+    --border-fallback: #e3e6ec;
+    --soft-fallback: #f0f3f9;
+    --code-fallback: #f7f8fb;
   }
+  /* 独立打开 + 显式暗色：只在没有宿主 token 时才生效 */
+  html[data-theme="dark"] {
+    color-scheme: dark;
+    --bg-fallback: #151517;
+    --panel-fallback: #2c2c2e;
+    --text-fallback: #f9fafb;
+    --muted-fallback: #cfd3d6;
+    --border-fallback: #ffffff1f;
+    --soft-fallback: #ffffff14;
+    --code-fallback: #1b1b1c;
+  }
+
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-    font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
-  .wrap { max-width: 1240px; margin: 0 auto; padding: 24px 20px 48px; }
+  body {
+    margin: 0;
+    background: var(--bg, var(--bg-fallback));
+    color: var(--text, var(--text-fallback));
+    font: 14px/1.55 var(--dsw-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 48px; }
   header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 20px; }
-  h1 { font-size: 20px; margin: 0; font-weight: 650; letter-spacing: .2px; }
-  .sub { color: var(--muted); font-size: 12px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 600; letter-spacing: .2px; }
+  .sub { color: var(--muted, var(--muted-fallback)); font-size: 12px; }
   .spacer { flex: 1; }
-  button { font: inherit; padding: 7px 14px; border: 1px solid var(--border); border-radius: 8px;
-    background: var(--panel); color: var(--text); cursor: pointer; }
-  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  button:hover { filter: brightness(.97); }
+
+  /* 按钮：底色 elevation-stroke + hover 走 interactive token，不用 filter */
+  button {
+    font: inherit; font-size: 13px; padding: 6px 13px; cursor: pointer;
+    border: 0; border-radius: var(--r-sm);
+    background: var(--panel-2, var(--panel-fallback));
+    color: var(--text, var(--text-fallback));
+    box-shadow: var(--elev-stroke);
+  }
+  button:hover { background: var(--soft, var(--soft-fallback)); }
+  button:active { background: var(--soft-active, var(--soft-fallback)); }
+  button.primary {
+    background: var(--dsw-alias-button-primary-fill, var(--accent, #2f5fd0));
+    color: var(--accent-fg, #fff);
+  }
+  button.primary:hover { background: var(--dsw-alias-button-primary-hover, var(--accent, #2f5fd0)); }
   button:disabled { opacity: .55; cursor: default; }
+  :focus-visible { outline: var(--focus-w) solid var(--accent, #2f5fd0); outline-offset: 2px; }
+
+  /* ---------- 概览卡片 ---------- */
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
-  .card .k { color: var(--muted); font-size: 12px; }
-  .card .v { font-size: 24px; font-weight: 650; margin-top: 4px; font-variant-numeric: tabular-nums; }
-  .card .v.small { font-size: 18px; }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-  .panel h2 { font-size: 14px; margin: 0 0 12px; font-weight: 650; }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; background: var(--soft); }
-  tr:last-child td { border-bottom: 0; }
-  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; border: 1px solid transparent; }
-  .b-ok { color: var(--ok); background: #e8f6ef; border-color: #c8e9d9; }
-  .b-stale, .b-manual { color: var(--warn); background: #fdf4e3; border-color: #f2dfb8; }
-  .b-error { color: var(--err); background: #fdeceb; border-color: #f5cdc9; }
-  .b-unsupported { color: var(--muted); background: var(--soft); border-color: var(--border); }
-  .money { font-weight: 650; }
-  .muted { color: var(--muted); }
+  .card {
+    background: var(--panel, var(--panel-fallback));
+    border-radius: var(--r-md); padding: 14px 16px;
+    box-shadow: var(--elev-soft);   /* 材质用阴影，不再画 1px 边框 */
+  }
+  .card .k { color: var(--muted, var(--muted-fallback)); font-size: 12px; line-height: 18px; }
+  .card .v { font-size: 24px; font-weight: 600; line-height: 32px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .card .v.small { font-size: 18px; line-height: 26px; }
+  .panel {
+    background: var(--panel, var(--panel-fallback));
+    border-radius: var(--r-md); padding: 16px;
+    box-shadow: var(--elev-soft);
+  }
+  .panel h2 { font-size: 14px; margin: 0 0 12px; font-weight: 600; }
+
+  /* ---------- 账户列表：卡片列表（两行信息层级 + 发丝分隔） ---------- */
+  .accounts { display: flex; flex-direction: column; }
+  .account {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(120px, 190px) minmax(96px, auto);
+    gap: 6px 16px; align-items: center;
+    padding: 12px 10px; border-radius: var(--r-sm);
+    /* 发丝分隔：box-shadow 而不是 border-bottom（不吃盒模型、缩放下不发虚） */
+    box-shadow: 0 0.5px 0 0 var(--hairline, var(--border-fallback));
+    transition: background .15s var(--ds-ease-in-out, ease-out);
+  }
+  .account:hover { background: var(--soft, var(--soft-fallback)); }
+  .account:last-child { box-shadow: none; }
+  .acct-main { min-width: 0; }
+  .acct-name { font-weight: 600; line-height: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-sub { color: var(--faint, var(--muted-fallback)); font-size: 12px; line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct-msg { font-size: 12px; line-height: 18px; margin-top: 2px; }
+  .acct-msg.err { color: var(--err, #c0392b); }
+  .acct-msg.muted { color: var(--muted, var(--muted-fallback)); }
+  .acct-meter { min-width: 0; }
+  .acct-amount { font-weight: 600; font-variant-numeric: tabular-nums; line-height: 20px; }
+  .acct-breakdown { color: var(--faint, var(--muted-fallback)); font-size: 12px; line-height: 18px; margin-top: 2px; }
+  .acct-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+
+  /* 进度条：全圆角必须配 corner-shape:round，否则被宿主的 superellipse 变形 */
+  .track {
+    height: 6px; border-radius: 999px; corner-shape: round;
+    background: var(--dsw-alias-bg-layer-3, var(--soft, #e8ebf1));
+    overflow: hidden; margin-top: 6px;
+  }
+  .fill { height: 100%; border-radius: 999px; corner-shape: round; transition: width .3s var(--ds-ease-in-out, ease-out); }
+  .fill[data-tone="ok"] { background: var(--ok, #12855b); }
+  .fill[data-tone="warn"] { background: var(--warn, #b7791f); }
+  .fill[data-tone="err"] { background: var(--err, #c0392b); }
+  .fill[data-tone="idle"] { background: var(--idle, #d4d4d4); }
+  .meter-note { color: var(--faint, var(--muted-fallback)); font-size: 11px; line-height: 16px; margin-top: 3px; }
+
+  /* 状态徽标：ok→success / stale,manual→warn / error→error / unsupported→idle */
+  .badge {
+    display: inline-block; padding: 0 8px; border-radius: 999px; corner-shape: round;
+    font-size: 12px; line-height: 20px; white-space: nowrap;
+  }
+  .b-ok { color: var(--ok, #12855b); background: var(--ok-bg, #e8f6ef); }
+  .b-stale, .b-manual { color: var(--warn, #b7791f); background: var(--warn-bg, #fdf4e3); }
+  .b-error { color: var(--err, #c0392b); background: color-mix(in srgb, var(--err, #c0392b) 12%, transparent); }
+  .b-unsupported { color: var(--muted, var(--muted-fallback)); background: var(--soft, var(--soft-fallback)); }
+
+  .money { font-weight: 600; }
+  .muted { color: var(--muted, var(--muted-fallback)); }
   .tiny { font-size: 12px; }
-  .warn-box { border-left: 3px solid var(--warn); background: #fffaf0; padding: 10px 12px; border-radius: 6px; margin-top: 12px; }
+  .warn-box {
+    border-left: 3px solid var(--warn, #b7791f);
+    background: var(--warn-bg, #fffaf0);
+    padding: 10px 12px; border-radius: var(--r-sm); margin-top: 12px; font-size: 13px;
+  }
   .warn-box ul { margin: 4px 0 0; padding-left: 18px; }
-  .grid2 { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+
+  .grid2 { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 960px) { .grid2 { grid-template-columns: 1fr; } }
-  label { display: block; font-size: 12px; color: var(--muted); margin: 0 0 4px; }
-  input, select, textarea { width: 100%; font: inherit; padding: 7px 9px; border: 1px solid var(--border);
-    border-radius: 8px; background: #fff; color: var(--text); }
+
+  label { display: block; font-size: 12px; color: var(--muted, var(--muted-fallback)); margin: 0 0 4px; }
+  input, select, textarea {
+    width: 100%; font: inherit; padding: 7px 9px;
+    border: .5px solid var(--border, var(--border-fallback));
+    border-radius: var(--r-sm);
+    background: var(--panel-2, var(--panel-fallback)); color: var(--text, var(--text-fallback));
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent, #2f5fd0); outline: none; }
   textarea { resize: vertical; min-height: 76px; }
   .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
   .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
-  .check { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+  .check { display: flex; align-items: center; gap: 6px; color: var(--text, var(--text-fallback)); font-size: 13px; }
   .check input { width: auto; }
-  pre { background: var(--code); border: 1px solid var(--border); border-radius: 8px; padding: 12px;
-    white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto; font-size: 12.5px; }
-  .foot { color: var(--muted); font-size: 12px; margin-top: 8px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; background: var(--ok); }
-  .dot.off { background: var(--err); }
+  pre {
+    background: var(--code, var(--code-fallback)); border-radius: var(--r-sm); padding: 12px;
+    white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: auto;
+    font-size: 12.5px; box-shadow: var(--elev-stroke); margin: 0;
+  }
+  .foot { color: var(--faint, var(--muted-fallback)); font-size: 12px; margin-top: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; corner-shape: round; display: inline-block; background: var(--ok, #12855b); }
+  .dot.off { background: var(--err, #c0392b); }
 
-  /* embed=1：被宿主左侧面板 iframe 内嵌时贴合宿主暗色主题并压缩留白。 */
-  html.embed body { --bg: #171a21; --panel: #1f2531; --border: #323a4a; --text: #e7eaf0;
-    --muted: #9aa3b5; --soft: #262d3b; --code: #141821; --accent: #5b8cff; }
+  /* ==========================================================================
+     embed=1：被宿主左侧面板 iframe 内嵌时压缩留白。
+     颜色不再在这里重新定义 —— 主题由 postMessage 推来的 token 决定。
+     ========================================================================== */
   html.embed .wrap { max-width: none; padding: 14px 16px 28px; }
   html.embed header { margin-bottom: 14px; }
   html.embed header h1 { display: none; }
-  html.embed .card, html.embed .panel, html.embed pre, html.embed input,
-  html.embed select, html.embed textarea { background: var(--panel); color: var(--text); border-color: var(--border); }
-  html.embed th { background: var(--soft); }
-  html.embed button { background: var(--panel); color: var(--text); border-color: var(--border); }
-  html.embed button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-  html.embed .b-ok { background: #16352a; border-color: #245c46; color: #6fd3a3; }
-  html.embed .b-stale, html.embed .b-manual { background: #3a2f18; border-color: #6a5426; color: #e8c477; }
-  html.embed .b-error { background: #3d2020; border-color: #6d3232; color: #f0938d; }
-  html.embed .b-unsupported { background: var(--soft); border-color: var(--border); color: var(--muted); }
-  html.embed .warn-box { background: #2d2718; }
+  html.embed .panel { padding: 14px; }
 </style>
-<script>if (new URLSearchParams(location.search).has('embed')) document.documentElement.classList.add('embed')</script>
+<script>
+  // 主题解析：显式 ?theme= 优先（client.js 会带），否则看 data-theme，最后跟随系统。
+  (function () {
+    var params = new URLSearchParams(location.search);
+    var theme = params.get('theme');
+    if (theme !== 'dark' && theme !== 'light') {
+      theme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    }
+    document.documentElement.dataset.theme = theme;
+    if (params.has('embed')) document.documentElement.classList.add('embed');
+
+    // 宿主 iframe 会 postMessage {type,theme,tokens}：把 token 直接 setProperty 到 :root，
+    // 优先级高于本文件里的兜底色，于是页面与宿主外观完全一致。
+    var TOKEN_MESSAGE = 'dsh-provider-console:theme';
+    window.addEventListener('message', function (event) {
+      var data = event.data;
+      if (!data || data.type !== TOKEN_MESSAGE) return;
+      if (data.theme === 'dark' || data.theme === 'light') {
+        document.documentElement.dataset.theme = data.theme;
+      }
+      var tokens = data.tokens || {};
+      for (var key in tokens) {
+        if (!Object.prototype.hasOwnProperty.call(tokens, key)) continue;
+        if (key.indexOf('--dsw-') !== 0) continue;   // 只接受 token，拒绝任意变量注入
+        var value = tokens[key];
+        if (typeof value !== 'string' || !value) continue;
+        document.documentElement.style.setProperty(key, value);
+      }
+    });
+
+    // 告诉宿主「已就绪」，让它在 iframe 内文档晚于父级 effect 完成时补推一次。
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'dsh-provider-console:ready' }, '*');
+    }
+  })();
+</script>
 </head>
 <body>
 <div class="wrap">
@@ -99,16 +268,13 @@
   <div class="grid2">
     <div class="panel">
       <h2>账户余额与配额</h2>
-      <table>
-        <thead><tr><th>账户</th><th>服务商</th><th>状态</th><th>余额 / 配额</th><th>构成</th><th>更新</th></tr></thead>
-        <tbody id="rows"><tr><td colspan="6" class="muted">加载中…</td></tr></tbody>
-      </table>
+      <div class="accounts" id="rows"><div class="muted tiny">加载中…</div></div>
       <div id="warnings"></div>
       <div class="foot">「不支持」= 该平台无按 API Key 查询余额的公开接口；可在账户配置里设 <code>balancePreset: manual</code> 手工录入。</div>
     </div>
 
     <div>
-      <div class="panel">
+      <div class="panel" style="margin-bottom:16px">
         <h2>通用 API 调用</h2>
         <div class="row">
           <div><label>账户</label><select id="account"></select></div>
@@ -146,11 +312,84 @@ function money(value, currency) {
 }
 const LABELS = { ok: '实时', stale: '缓存', error: '失败', unsupported: '不支持', manual: '手工' };
 
+/** 状态 → 语义色。ok→success / stale,manual→warn / error→error / unsupported→idle（中性）。 */
+const TONE = { ok: 'ok', stale: 'warn', manual: 'warn', error: 'err', unsupported: 'idle' };
+
+/**
+ * 进度条的比例。只有在「知道上限」时才是真实百分比：
+ *   · 余额类且配置了 lowBalanceThreshold → 相对阈值（阈值=满格），低于阈值即进 warn/err
+ *   · 配额类 → 用 usedPercent
+ * 两者都没有时返回 undefined，调用方渲染一条中性空轨道而不是编一个数字。
+ */
+function meterOf(item, threshold) {
+  if (item.quotas && item.quotas.length) {
+    const used = item.quotas
+      .map((q) => (typeof q.usedPercent === 'number' ? q.usedPercent : undefined))
+      .filter((v) => typeof v === 'number');
+    if (used.length) {
+      const pct = Math.max(...used);
+      return { ratio: Math.max(0, Math.min(1, pct / 100)), tone: pct >= 90 ? 'err' : pct >= 70 ? 'warn' : 'ok', note: '配额 ' + pct.toFixed(0) + '% 已用' };
+    }
+    return undefined;
+  }
+  if (typeof item.total === 'number' && typeof threshold === 'number' && threshold > 0) {
+    const ratio = Math.max(0, Math.min(1, item.total / (threshold * 2)));
+    const tone = item.total < threshold ? 'err' : item.total < threshold * 1.5 ? 'warn' : 'ok';
+    return { ratio, tone, note: '阈值 ' + threshold };
+  }
+  return undefined;
+}
+
+/** 一条账户 → 卡片列表里的一行（两行信息层级：主行 + 次级说明）。 */
+function accountRow(item, threshold) {
+  const breakdown = Object.entries(item.breakdown || {})
+    .map(([k, v]) => esc(k) + ' ' + money(v, item.currency))
+    .join(' / ');
+  let amount = '—';
+  if (item.total !== undefined && item.total !== null) amount = money(item.total, item.currency);
+  else if (item.quotas && item.quotas.length) {
+    amount = item.quotas
+      .map((q) => esc(q.name) + ' ' + (q.usedPercent !== undefined ? q.usedPercent + '% 已用' : (q.remaining ?? '?') + '/' + (q.limit ?? '?')))
+      .join('；');
+  }
+
+  const msg = item.error
+    ? '<div class="acct-msg err">' + esc(item.error.message) + '</div>'
+    : item.note
+      ? '<div class="acct-msg muted">' + esc(item.note) + '</div>'
+      : '';
+
+  const meter = meterOf(item, threshold);
+  const meterHtml = meter
+    ? '<div class="acct-amount">' + amount + '</div>' +
+      '<div class="track"><div class="fill" data-tone="' + meter.tone + '" style="width:' + (meter.ratio * 100).toFixed(1) + '%"></div></div>' +
+      '<div class="meter-note">' + esc(meter.note) + '</div>'
+    : '<div class="acct-amount">' + amount + '</div>';
+
+  const stale = item.stale ? '<div class="tiny muted">旧数据</div>' : '';
+
+  return '<div class="account">' +
+      '<div class="acct-main">' +
+        '<div class="acct-name">' + esc(item.label) + '</div>' +
+        '<div class="acct-sub">' + esc(item.accountId) + ' · ' + esc(item.providerId) + '</div>' +
+        msg +
+      '</div>' +
+      '<div class="acct-meter">' + meterHtml + '</div>' +
+      '<div class="acct-side">' +
+        '<span class="badge b-' + esc(item.status) + '">' + (LABELS[item.status] || esc(item.status)) + '</span>' +
+        stale +
+        (breakdown ? '<div class="acct-breakdown">' + breakdown + '</div>' : '') +
+        '<div class="tiny muted">' + new Date(item.fetchedAt).toLocaleTimeString() + '</div>' +
+      '</div>' +
+    '</div>';
+}
+
 function render(data) {
   state = data;
   const report = data.report || { accounts: [], totals: [], warnings: [], counts: {} };
   const accounts = data.accounts || [];
   const c = report.counts || {};
+  const cfg = data.config || {};
   const total = (cur) => (report.totals || []).find((t) => t.currency === cur);
   $('totalCny').textContent = money(total('CNY')?.total, 'CNY');
   $('totalUsd').textContent = money(total('USD')?.total, 'USD');
@@ -161,20 +400,10 @@ function render(data) {
   $('dot').className = 'dot';
 
   const rows = report.accounts || [];
-  $('rows').innerHTML = rows.length ? rows.map((item) => {
-    const breakdown = Object.entries(item.breakdown || {}).map(([k, v]) => `${esc(k)} ${money(v, item.currency)}`).join(' / ') || '—';
-    let value = '—';
-    if (item.total !== undefined && item.total !== null) value = '<span class="money">' + money(item.total, item.currency) + '</span>';
-    else if (item.quotas && item.quotas.length) value = item.quotas.map((q) => esc(q.name) + ' ' + (q.usedPercent !== undefined ? q.usedPercent + '% 已用' : (q.remaining ?? '?') + '/' + (q.limit ?? '?'))).join('；');
-    const extra = item.error ? `<div class="tiny" style="color:var(--err)">${esc(item.error.message)}</div>`
-      : item.note ? `<div class="tiny muted">${esc(item.note)}</div>` : '';
-    return `<tr>
-      <td><strong>${esc(item.label)}</strong><div class="tiny muted">${esc(item.accountId)}</div>${extra}</td>
-      <td>${esc(item.providerId)}</td>
-      <td><span class="badge b-${esc(item.status)}">${LABELS[item.status] || esc(item.status)}</span>${item.stale ? '<div class="tiny muted">旧数据</div>' : ''}</td>
-      <td>${value}</td><td class="tiny">${breakdown}</td>
-      <td class="tiny muted">${new Date(item.fetchedAt).toLocaleTimeString()}</td></tr>`;
-  }).join('') : '<tr><td colspan="6" class="muted">没有启用的账户。请在 cordis.patch.yml / accountsDir 中添加。</td></tr>';
+  const threshold = typeof cfg.lowBalanceThreshold === 'number' ? cfg.lowBalanceThreshold : undefined;
+  $('rows').innerHTML = rows.length
+    ? rows.map((item) => accountRow(item, threshold)).join('')
+    : '<div class="muted tiny">没有启用的账户。请在 cordis.patch.yml / accountsDir 中添加。</div>';
 
   const warns = [...new Set(report.warnings || [])];
   $('warnings').innerHTML = warns.length

@@ -1,0 +1,17 @@
+<!-- 设置页分区：只读 + 复制 YAML -->
+<div class="dpc-sec"><div class="dpc-sec-head"><h2 class="dpc-sec-title">服务商控制台</h2><span class="dpc-badge" data-tone="idle">只读</span><span class="dpc-sec-gap"></span><a class="dpc-btn" href="http://127.0.0.1:8788/" rel="noreferrer" target="_blank">打开看板</a></div><div class="dpc-card"><div class="dpc-card-h">当前生效值（宿主传给浏览器半端的配置）</div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">dashboard.enabled</code> · 本地看板</div><div class="dpc-v">true</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">dashboard.port</code> · 看板端口</div><div class="dpc-v">8788</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">sidebar.enabled</code> · 左侧栏入口</div><div class="dpc-v">true</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">sidebar.label</code> · 入口名称</div><div class="dpc-v">服务商控制台</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">sidebar.order</code> · 入口排序</div><div class="dpc-v">20</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">lowBalanceThreshold</code> · 低余额预警阈值</div><div class="dpc-v">20</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">cacheTtlMs</code> · 余额缓存 TTL (ms)</div><div class="dpc-v">60000</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">autoDiscover</code> · 凭证自动探测</div><div class="dpc-v">true</div></div><div class="dpc-kv"><div class="dpc-k"><code class="dpc-v">llmProvider.enabled</code> · 模型 provider</div><div class="dpc-v">true</div></div></div><div class="dpc-card"><div class="dpc-card-h">如何修改</div><div class="dpc-note">这些值来自 profile 的 cordis.patch.yml。本页只读 —— 插件不会替你改配置文件（写回 YAML 会破坏注释、和插件管理器的写入互相覆盖，风险高于收益）。<br />改法：复制下面的片段 → 粘到你的 profile 里 → 保存，宿主会热重载。</div><pre class="dpc-code">- insert:
+    - id: provider-console
+      name: dsh-plugin-provider-console
+      config:
+        autoDiscover: true
+        lowBalanceThreshold: 20
+        cacheTtlMs: 60000
+        dashboard:
+          enabled: true
+          port: 8788
+        sidebar:
+          enabled: true
+          label: 服务商控制台
+          order: 20
+        llmProvider:
+          enabled: true</pre><button class="dpc-btn dpc-btn-copy" data-variant="primary" type="button">复制 YAML 片段</button></div></div>

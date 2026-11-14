@@ -94,6 +94,7 @@ export function createConsole(config: ConsoleConfig = {}, options: CreateConsole
         host: resolved.dashboard.host,
         port: resolved.dashboard.port,
         pollMs: resolved.dashboard.pollMs,
+        config: resolved,
         log,
       })
     : undefined

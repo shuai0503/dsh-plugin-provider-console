@@ -48,8 +48,25 @@
           port: 8788
           pollMs: 5000
 
-        # 左侧栏「服务商控制台」入口
+        # 左侧栏「服务商控制台」入口 + 设置页分区
+        # 主题跟随宿主的 data-ds-dark-theme（亮/暗自动切换，无硬编码配色）。
         sidebar:
           enabled: true
           label: 服务商控制台
           order: 20
+
+        # 模型 provider：把账户接进对话框的模型选择器。
+        # 需要宿主提供 llm 服务（DSH 桌面版自带）；没有该服务的宿主会静默跳过，
+        # 上面的工具 / 余额 / 看板全部照常工作。
+        #
+        # 想关掉就设 enabled: false。
+        llmProvider:
+          enabled: true
+          # 路由 id 前缀：最终 id 是 <prefix>-<账户id>，例如 pc-deepseek。
+          # 必须是小写连字符标识（pi-ai 的路由命名要求）。
+          routePrefix: pc
+          # 账户没声明 contextWindow / maxTokens 时的兜底值
+          defaultContextWindow: 128000
+          defaultMaxTokens: 8192
+          streamIdleTimeoutMs: 300000
+          discovery: true

@@ -90,6 +90,14 @@ export function resolveConfig(config: ConsoleConfig = {}, cwd: string = process.
     pollMs: clamp(config.dashboard?.pollMs ?? 5000, 1000, 600_000),
   }
 
+  // 路由前缀会被拼进 provider id，必须是 pi-ai/DSH 都接受的小写连字符标识符；
+  // 非法值退回默认而不是让整条插件加载失败。
+  const rawPrefix = (config.llmProvider?.routePrefix ?? 'pc').trim()
+  const routePrefix = /^[a-z][a-z0-9-]*$/.test(rawPrefix) ? rawPrefix : 'pc'
+  if (rawPrefix && routePrefix !== rawPrefix) {
+    warnings.push(`llmProvider.routePrefix "${rawPrefix}" 不是小写连字符标识，已退回 "${routePrefix}"`)
+  }
+
   return {
     accounts,
     customProviders,
@@ -121,6 +129,22 @@ export function resolveConfig(config: ConsoleConfig = {}, cwd: string = process.
       allowedHosts: [...hosts],
     },
     dashboard,
+    // 与 client.js 的 panelOptions() 默认值一一对应：enabled 缺省 true、order 缺省 20。
+    // 两端默认值相反时，用户不写 sidebar 配置会看到「图标存在但面板标签/排序不对」。
+    sidebar: {
+      enabled: config.sidebar?.enabled !== false,
+      label: (config.sidebar?.label ?? '').trim() || '服务商控制台',
+      order: clamp(config.sidebar?.order ?? 20, -1_000_000, 1_000_000),
+      ...(config.sidebar?.dashboardUrl ? { dashboardUrl: config.sidebar.dashboardUrl } : {}),
+    },
+    llm: {
+      enabled: config.llmProvider?.enabled !== false,
+      routePrefix,
+      defaultContextWindow: clamp(config.llmProvider?.defaultContextWindow ?? 128_000, 1_024, 10_000_000),
+      defaultMaxTokens: clamp(config.llmProvider?.defaultMaxTokens ?? 8_192, 1, 1_000_000),
+      streamIdleTimeoutMs: clamp(config.llmProvider?.streamIdleTimeoutMs ?? 300_000, 1_000, 3_600_000),
+      discovery: config.llmProvider?.discovery !== false,
+    },
   }
 }
 

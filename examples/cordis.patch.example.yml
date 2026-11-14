@@ -107,12 +107,15 @@
           pollMs: 5000
 
         # ---------- 左侧「服务商控制台」入口（宿主侧栏）----------
-        # client.js 注册 sidebar.panellist 图标 + main 面板，面板内嵌上面的看板
-        # （?embed=1 走暗色样式）。enabled:false 可只保留工具与看板、不加入口。
+        # client.js 注册 sidebar.panellist 图标 + main 面板，面板内嵌上面的看板。
+        # 主题：面板与 iframe 都跟随宿主 body[data-ds-dark-theme]，亮/暗自动切换。
+        # enabled:false 只影响图标与主面板；设置页分区（settings.section）仍会注册，
+        # 这样用户仍能在 设置 → 服务商控制台 里看到配置并把开关改回来。
         sidebar:
           enabled: true
           label: 服务商控制台
           order: 20
+          # 可选：显式覆盖看板地址；缺省按 dashboard.host/port 推导
           dashboardUrl: "http://127.0.0.1:8788/"
 
         # ---------- 云账号签名适配器（审批后接入代码，开关保持关闭）----------

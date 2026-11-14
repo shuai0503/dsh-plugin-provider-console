@@ -28,6 +28,8 @@ import type { BalanceMapper } from './providers/mappers.ts'
 import { registerCloudSigning } from './providers/cloud-signing.ts'
 import type { DiscoverySnapshot } from './autodiscover.ts'
 import { isCredentialSeam, type CredentialSeam } from './autodiscover.ts'
+import { registerModelProvider, statusOf, type ModelProviderHandle, type ModelProviderStatus } from './llm-provider.ts'
+import { installDebugRoutes, type DebugApiStatus, type DebugRoutesHandle } from './debug-api.ts'
 import {
   DEFAULT_PROMPT_SECTION,
   PROMPT_SECTION_NAME,
@@ -35,13 +37,15 @@ import {
 } from './prompt-section.ts'
 
 export const name = 'provider-console'
-export const version = '0.2.3'
+export const version = '0.4.0'
 
 /**
  * 只硬依赖 tools；其余宿主能力全部可选。
  *
- * 特别地 `credentials` **不**写进 inject：缺少该服务的宿主会因硬依赖而加载失败，
- * 而我们只把它当作增强能力（用于凭证自动探测），拿不到就静默跳过。
+ * 特别地 `credentials` 与 `llm` **不**写进 inject：缺少该服务的宿主会因硬依赖
+ * 而加载失败，而我们只把它们当作增强能力（凭证自动探测 / 模型 provider），
+ * 拿不到就静默跳过。两者都只能经 `ctx.get(name)` 取 —— Cordis 的 Proxy get
+ * 对未在 inject 声明的属性会直接抛 `cannot get property "X" without inject`。
  */
 export const inject = ['tools']
 
@@ -53,6 +57,10 @@ export interface ProviderConsoleApi {
   readonly config: ResolvedConfig
   /** 自动探测状态（不含任何密钥值）。 */
   readonly discovery: DiscoverySnapshot
+  /** 模型 provider 状态：是否激活、为什么没激活、当前公布了哪些路由。 */
+  modelProvider(): ModelProviderStatus
+  /** 「调试台」同源路由的状态：是否挂上、两条路径、失败原因。 */
+  debugApi(): DebugApiStatus
   /** 注入全新协议的服务商实现（可覆盖内置 id）。 */
   registerProvider(provider: ProviderSpec | ProviderAdapter): () => void
   /** 注入自定义余额响应映射器。 */
@@ -70,6 +78,9 @@ export interface ProviderConsoleApi {
   raw(): Console
 }
 
+/** 模型 provider 的对外状态（脱敏）。 */
+export type { ModelProviderStatus }
+
 /** 宿主上下文的最小形状；不 import Cordis 类型，避免版本/依赖树耦合。 */
 interface Context {
   tools?: { register(tool: unknown): () => void }
@@ -83,7 +94,16 @@ interface Context {
   [key: string]: unknown
 }
 
-export function apply(ctx: Context, config: ConsoleConfig = {}): void {
+/**
+ * 测试/嵌入用的可选接缝，**不进配置面**：这些是运行时对象，不该出现在
+ * cordis.patch.yml 里。
+ */
+export interface ApplySeams {
+  /** 直接给出宿主 LLM 模块（跳过惰性 import）。 */
+  llmModules?: Parameters<typeof registerModelProvider>[0]['modules']
+}
+
+export function apply(ctx: Context, config: ConsoleConfig = {}, seams: ApplySeams = {}): void {
   const log = createLogger(ctx)
   // credentials 是**可选**依赖：ctx.get() 拿不到就返回 undefined，
   // 自动探测静默跳过，工具/余额/看板照常工作（见 inject 的说明）。
@@ -104,8 +124,27 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
   const detachPromptSection =
     config.systemPromptSection === true ? installPromptSection(ctx, config, log) : null
 
+  // 模型 provider：把账户接进对话框的模型选择器（可选降级 —— 宿主没有 llm
+  // 服务、或没有 llm-pi-ai 包时，这里只留一条 warning）。
+  const modelProvider: ModelProviderHandle = registerModelProvider({
+    ctx: ctx as Record<string, unknown>,
+    registry,
+    config: resolved,
+    log,
+    ...(seams.llmModules ? { modules: seams.llmModules } : {}),
+  })
+
   log(`已注册 ${registry.listProviderIds().length} 个服务商、${registry.listAccountIds().length} 个账户`)
   if (consoleInstance.dashboard) log(`本地看板：${consoleInstance.dashboard.url}`)
+
+  // 「调试台」同源路由：把任意端点调试接进 DSH 主界面（跨源看板做不到这件事）。
+  // 与 systemPrompt / llm 一样是可选增强 —— 宿主没有 webServer 时静默跳过。
+  const debugRoutes: DebugRoutesHandle = installDebugRoutes(ctx as Record<string, unknown>, {
+    registry,
+    invocation,
+    config: resolved,
+    log,
+  })
 
   // 余额变化广播给宿主事件总线（失败不影响插件）
   const offUpdate = balances.onUpdate((report) => {
@@ -126,6 +165,8 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
         hostDeps: { source: hostDeps.source, notes: hostDeps.notes },
         dashboardUrl: consoleInstance.dashboard?.url,
         discovery: consoleInstance.discovery,
+        modelProvider: () => statusOf(modelProvider),
+        debugApi: () => debugRoutes.status(),
       })
     : []
 
@@ -133,10 +174,17 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
     version,
     config: resolved,
     discovery: consoleInstance.discoverySnapshot(),
+    modelProvider: () => statusOf(modelProvider),
+    debugApi: () => debugRoutes.status(),
     registerProvider: (provider) => registry.registerProvider(provider),
     registerMapper: (mapperName, mapper) => registerMapper(mapperName, mapper),
     registerAccount: (account) => void registry.registerAccount(account),
-    unregisterAccount: (id) => registry.unregisterAccount(id),
+    unregisterAccount: (id) => {
+      const removed = registry.unregisterAccount(id)
+      // 账户变了路由也要跟着变，否则选择器里会留下一个点不动的死路由。
+      if (removed) modelProvider.refresh()
+      return removed
+    },
     listAccounts: () => registry.listAccounts(),
     listProviders: () => registry.listProviders(),
     refreshBalances: (options) => balances.refresh(options),
@@ -144,6 +192,8 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
     models: (accountId, options) => invocation.models(accountId, options),
     rediscover: async () => {
       await consoleInstance.rediscover(credentials)
+      // 自动探测可能新增/移除账户；重算一次路由让选择器跟上。
+      modelProvider.refresh()
       return consoleInstance.discoverySnapshot()
     },
     raw: () => consoleInstance,
@@ -152,6 +202,16 @@ export function apply(ctx: Context, config: ConsoleConfig = {}): void {
 
   const cleanup = () => {
     offUpdate()
+    try {
+      debugRoutes.dispose()
+    } catch {
+      /* 已释放 */
+    }
+    try {
+      modelProvider.dispose()
+    } catch {
+      /* 已释放 */
+    }
     for (const dispose of toolDisposers) {
       try {
         dispose()

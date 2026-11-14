@@ -134,6 +134,78 @@ export interface ProviderSpec {
   docs?: string
 }
 
+// ---------------------------------------------------------------------------
+// 模型 provider（把账户接进宿主的模型选择器）
+// ---------------------------------------------------------------------------
+
+/**
+ * 推理档位表：键是档位名（off/low/medium/high/xhigh/max），值是线上拼写。
+ * `null` 或 `false` 都表示「这个档位不支持」（pi-ai 用 null，YAML 里写 false
+ * 更顺手，两者归一）。
+ */
+export type ThinkingLevelMap = Record<string, string | null | false>
+
+/**
+ * 一个模型在选择器里的能力声明。
+ *
+ * 只有 `id` 必填；其余字段缺省时由 `LlmProviderConfig` 的默认值补齐，
+ * 因为「说不清的能力」比「猜错的能力」更安全：少报会被拒绝在附加之前，
+ * 多报则要等到上游 400 之后才会暴露，而那时消息已经落盘。
+ */
+export interface LlmModelSpec {
+  id: string
+  /** 选择器里显示的名字；缺省用 id。 */
+  name?: string
+  contextWindow?: number
+  maxTokens?: number
+  /**
+   * 推理能力。`false`（默认）表示纯对话模型；`true` 表示支持
+   * OpenAI 的 reasoning_effort 档位；给对象则作为 pi-ai 的
+   * `thinkingLevelMap`（键是档位，值是线上拼写，`null`/`false` = 不支持）。
+   */
+  reasoning?: boolean | ThinkingLevelMap
+  /** pi-ai 的输入模态；缺省 `['text']`。 */
+  inputModalities?: string[]
+}
+
+/** 账户级的 LLM provider 覆盖；不写则全部用全局默认值。 */
+export interface AccountLlmSpec {
+  /** false = 这个账户不进模型选择器（余额/工具照常）。 */
+  enabled?: boolean
+  /** 选择器里显示的提供方名字；缺省用账户 label。 */
+  displayName?: string
+  /** 覆盖账户级 models 清单；元素可以是 id 或结构化声明。 */
+  models?: Array<string | LlmModelSpec>
+  /** 账户内所有模型的默认上下文窗口。 */
+  contextWindow?: number
+  /** 账户内所有模型的默认输出上限。 */
+  maxTokens?: number
+  /** 账户内所有模型默认的推理能力（见 LlmModelSpec.reasoning）。 */
+  reasoning?: boolean | ThinkingLevelMap
+  /** 额外请求头；与账户 headers 合并，后者优先。 */
+  headers?: Record<string, string>
+}
+
+/**
+ * 模型 provider 能力开关。
+ *
+ * 缺省启用：宿主有 `llm` 服务且有可用账户时，账户会自动出现在对话框的
+ * 模型选择器里；没有该服务的宿主静默跳过，工具与看板不受影响。
+ */
+export interface LlmProviderConfig {
+  enabled?: boolean
+  /** 路由 id 前缀，最终 id 是 `<prefix>-<accountId>`；默认 `pc`。 */
+  routePrefix?: string
+  /** 未声明 contextWindow 的模型用这个值；默认 128000。 */
+  defaultContextWindow?: number
+  /** 未声明 maxTokens 的模型用这个值；默认 8192。 */
+  defaultMaxTokens?: number
+  /** 流空闲上限（毫秒）；默认 300000。 */
+  streamIdleTimeoutMs?: number
+  /** 是否同时注册 model discovery（配置页「拉取模型」）；默认 true。 */
+  discovery?: boolean
+}
+
 /** 账户配置（可直接写在 cordis.patch.yml 或 accountsDir/*.json）。 */
 export interface AccountConfig {
   id: string
@@ -150,7 +222,7 @@ export interface AccountConfig {
   /** 支持 `${ENV_VAR}` 展开的额外请求头。 */
   headers?: Record<string, string>
   defaultModel?: string
-  /** `/models` 不可用时的静态模型清单。 */
+  /** `/models` 不可用时的静态模型清单；同时也是模型选择器的候选来源。 */
   models?: string[]
   balancePreset?: BalancePreset
   /** balancePreset=manual 时手工录入的余额。 */
@@ -159,6 +231,8 @@ export interface AccountConfig {
   lowBalanceThreshold?: number
   enabled?: boolean
   timeoutMs?: number
+  /** 模型 provider 覆盖；不写则用全局默认值。 */
+  llm?: AccountLlmSpec
   metadata?: Record<string, unknown>
 }
 
@@ -388,6 +462,24 @@ export interface DashboardConfig {
   pollMs: number
 }
 
+/**
+ * 左侧栏入口与设置页分区的展示配置。
+ *
+ * 浏览器半端（client.js）直接读这份原始 config 渲染图标与面板，宿主侧则把它
+ * 归一化后放进 ResolvedConfig，两端默认值必须一致 —— 不一致时会出现「图标在
+ * 点击后面板是空的」这类不一致状态。默认值见 resolveConfig()。
+ */
+export interface SidebarConfig {
+  /** false = 不注册左侧入口与主面板（设置页分区仍然注册）。 */
+  enabled: boolean
+  /** 入口显示名；缺省「服务商控制台」。 */
+  label: string
+  /** 入口与主面板的排序；缺省 20。 */
+  order: number
+  /** 显式覆盖看板地址（默认由 dashboard.host/port 推导）。 */
+  dashboardUrl?: string
+}
+
 // ---------------------------------------------------------------------------
 // 云账号签名适配器（需要 AK/SK 与 RAM/IAM 授权；默认完全关闭）
 // ---------------------------------------------------------------------------
@@ -478,6 +570,8 @@ export interface ConsoleConfig {
   allowedHosts?: string[]
 
   dashboard?: Partial<DashboardConfig>
+  /** 左侧栏入口 / 设置页分区。 */
+  sidebar?: Partial<SidebarConfig>
   userAgent?: string
 
   /** 通过 ctx.systemPrompt.section 注入工具使用说明；宿主不支持时静默跳过。 */
@@ -489,6 +583,15 @@ export interface ConsoleConfig {
 
   /** 云账号签名适配器；默认关闭，开启前必须提供 AK/SK 环境变量。 */
   cloudSigning?: CloudSigningConfig
+
+  /**
+   * 模型 provider：把账户接进宿主的模型选择器。
+   *
+   * 需要宿主提供 `llm` 服务；没有该服务的宿主会静默跳过这一段，
+   * 工具/余额/看板全部照常工作。也可以传 `llmProvider: { enabled: false }`
+   * 显式关闭。
+   */
+  llmProvider?: LlmProviderConfig
 }
 
 export interface ResolvedConfig {
@@ -521,6 +624,15 @@ export interface ResolvedConfig {
     allowedHosts: string[]
   }
   dashboard: DashboardConfig
+  sidebar: SidebarConfig
+  llm: {
+    enabled: boolean
+    routePrefix: string
+    defaultContextWindow: number
+    defaultMaxTokens: number
+    streamIdleTimeoutMs: number
+    discovery: boolean
+  }
 }
 
 export type LogFn = (message: string, detail?: unknown) => void

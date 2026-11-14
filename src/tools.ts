@@ -23,6 +23,8 @@ import type { ConsoleRegistry } from './core/registry.ts'
 import type { BalanceService } from './core/balance.ts'
 import type { InvocationService } from './core/invocation.ts'
 import type { DiscoveryState } from './autodiscover.ts'
+import type { ModelProviderStatus } from './index.ts'
+import type { DebugApiStatus } from './debug-api.ts'
 import { lossless } from './core/errors.ts'
 
 import { loadHostDeps } from './hostdeps.ts'
@@ -50,6 +52,10 @@ export interface ToolDeps {
   dashboardUrl?: string
   /** 凭证自动探测状态；缺省表示该宿主没有这项能力。 */
   discovery?: DiscoveryState
+  /** 模型 provider 状态（惰性读取，因为路由会随账户变化）。 */
+  modelProvider?: () => ModelProviderStatus
+  /** 「调试台」同源路由状态（惰性读取：服务晚挂载时会变）。 */
+  debugApi?: () => DebugApiStatus
 }
 
 const ACCOUNT_SCHEMA = {
@@ -299,8 +305,9 @@ export function registerTools(ctx: ToolHost, deps: ToolDeps): Array<() => void> 
       description:
         '查看插件运行状态：版本、宿主 defineTool 来源、已注册服务商/账户数、' +
         '凭证自动探测结果（autoDiscover 开关、探测到几个、每个服务商已配置/未配置）、' +
+        '模型 provider 状态（是否出现在对话框的模型选择器里、公布了哪些路由与模型）、' +
         '缓存与自动刷新配置、主机白名单、看板地址、配置警告。' +
-        '排查「插件没生效 / 余额查不到 / 调用被拒 / 为什么没有账户」时先看这里。',
+        '排查「插件没生效 / 余额查不到 / 调用被拒 / 为什么没有账户 / 为什么模型选择器里没有我的模型」时先看这里。',
       parameters: {},
       output: {
         schema: { type: 'object', additionalProperties: true },
@@ -325,6 +332,8 @@ export function registerTools(ctx: ToolHost, deps: ToolDeps): Array<() => void> 
           allowedHosts: deps.registry.allowedHosts(),
           dashboardUrl: deps.dashboardUrl,
           autoDiscover: discovery,
+          modelProvider: deps.modelProvider?.() ?? { active: false, reason: '宿主没有 llm 服务', routes: [] },
+          debugApi: deps.debugApi?.() ?? { registered: false, reason: '调试台未挂载', paths: { request: '', accounts: '' } },
           warnings: [...deps.config.warnings, ...discovery.warnings],
         })
       },
@@ -361,6 +370,8 @@ interface StatusPayload {
   allowedHosts: string[]
   dashboardUrl?: string
   autoDiscover?: AutoDiscoverStatus
+  modelProvider?: ModelProviderStatus
+  debugApi?: DebugApiStatus
   warnings: string[]
 }
 
@@ -427,6 +438,7 @@ function renderStatus(value: StatusPayload): string {
     `- 主机白名单：${value.allowedHosts.join(', ') || '（空）'}`,
   ]
   if (value.dashboardUrl) lines.push(`- 本地看板：${value.dashboardUrl}`)
+  lines.push(...renderDebugApi(value.debugApi))
 
   const discovery = value.autoDiscover
   if (discovery) {
@@ -462,7 +474,55 @@ function renderStatus(value: StatusPayload): string {
   if (value.warnings.length) lines.push('', '配置警告：', ...value.warnings.map((w) => `- ${w}`))
   const missing = value.accounts.filter((a) => !a.hasApiKey)
   if (missing.length) lines.push('', `缺少密钥的账户：${missing.map((a) => a.id).join(', ')}（用 provider_accounts 的 refresh-credentials 重读环境变量）`)
+  lines.push(...renderModelProvider(value.modelProvider))
   return lines.join('\n')
+}
+
+/** 模型 provider 小节：没启用时只说原因，启用时列出选择器里会出现什么。 */
+function renderModelProvider(model: ModelProviderStatus | undefined): string[] {
+  if (!model) return []
+  const lines = ['', '### 模型选择器（模型 provider）', '']
+  if (!model.active) {
+    lines.push(`- 状态：未启用（${model.reason ?? '原因未知'}）`)
+    return lines
+  }
+  const modelCount = model.routes.reduce((sum, route) => sum + route.models.length, 0)
+  lines.push(
+    `- 状态：已启用，${model.routes.length} 条路由 / ${modelCount} 个模型`,
+    `- 对话框的模型选择器里会看到：${model.routes.map((route) => route.displayName).join('、')}`,
+    '',
+    '| 路由 | 账户 | 模型 | 密钥 |',
+    '| --- | --- | --- | --- |',
+  )
+  for (const route of model.routes) {
+    lines.push(
+      `| \`${route.provider}\` | \`${route.accountId}\` | ${route.models.map((m) => `\`${m.id}\``).join(', ')} | ${
+        route.hasApiKey ? '已配置' : '缺失'
+      } |`,
+    )
+  }
+  const noKey = model.routes.filter((route) => !route.hasApiKey)
+  if (noKey.length) {
+    lines.push('', `缺密钥的路由（选中后会报 MISSING_CREDENTIAL）：${noKey.map((r) => `\`${r.provider}\``).join(', ')}`)
+  }
+  return lines
+}
+
+/** 「调试台」小节：同源路由挂没挂上，以及为什么。 */
+function renderDebugApi(debug: DebugApiStatus | undefined): string[] {
+  if (!debug) return []
+  if (!debug.registered) {
+    return ['', '### 调试台（任意端点）', '', `- 状态：同源路由未挂载（${debug.reason ?? '原因未知'}）`]
+  }
+  return [
+    '',
+    '### 调试台（任意端点）',
+    '',
+    `- 状态：已挂载（同源，跨源看板做不到这件事）`,
+    `- 账户列表：GET \`${debug.paths.accounts}\``,
+    `- 发请求：POST \`${debug.paths.request}\`（body: accountId/method/path/headers/body/dryRun）`,
+    '- 界面：左侧栏「服务商控制台」→「调试台」标签页',
+  ]
 }
 
 function toAccountConfig(raw: Record<string, unknown>): AccountConfig {

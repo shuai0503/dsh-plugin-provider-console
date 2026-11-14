@@ -426,6 +426,7 @@ test('createConsole：不传 credentials 时降级，账户与工具面照常', 
   )
   try {
     const report = await consoleInstance.discovery.settled
+    assert.ok(report, 'settled 必须给出报告')
     assert.equal(report.serviceAvailable, false)
     assert.deepEqual(report.discovered, [])
     assert.deepEqual(consoleInstance.listAccounts().map((item) => item.id), ['ds-main'])

@@ -1,0 +1,41 @@
+变异测试报告
+==============================================================================
+RED   M1-token-typo                        匹配=1  变异前 pass=12 → 变异后 fail=2
+        退回 0.3.0 的错拼 token：必须被「token 真实存在」守卫抓住
+RED   M2-theme-ignores-host                匹配=1  变异前 pass=15 → 变异后 fail=1
+        主题判定恒返回 light：暗色宿主会被渲染成亮色，themeOf 断言必须变红
+RED   M3-iframe-no-theme-param             匹配=1  变异前 pass=15 → 变异后 fail=2
+        iframe URL 丢掉 theme 参数：iframe 主题跟随整条链路失效
+RED   M4-corner-shape-dropped              匹配=1  变异前 pass=12 → 变异后 fail=2
+        进度条丢了 corner-shape:round：会被宿主 superellipse 拉成畸形
+RED   M5-inline-fallback-returns           匹配=1  变异前 pass=12 → 变异后 fail=1
+        把 inline fallback 加回来：拼写错误会重新变成静默错误
+RED   M6-prefers-color-scheme              匹配=1  变异前 pass=15 → 变异后 fail=1
+        改用 prefers-color-scheme：会覆盖用户手动选的主题（DSH 已经解析过系统偏好）
+RED   M7-status-tone-wrong                 匹配=1  变异前 pass=12 → 变异后 fail=1
+        状态色映射塌成一个色：缓存/失败/不支持将无法区分
+RED   M8-settings-section-id-mismatch      匹配=1  变异前 pass=15 → 变异后 fail=1
+        settings.section.icon 的 id 与 section 不一致：设置页导航图标挂不上
+RED   M9-sidebar-disabled-kills-settings   匹配=1  变异前 pass=15 → 变异后 fail=1
+        把设置页也挂在 sidebar.enabled 下：用户关掉图标后再也没有入口改回来
+RED   M10-yaml-leaks-apikey                匹配=1  变异前 pass=15 → 变异后 fail=1
+        YAML 片段里混进密钥字段：只读页面的底线被破坏
+RED   M11-dashboard-config-not-sent        匹配=1  变异前 pass=10 → 变异后 fail=2
+        直接把 ResolvedConfig 塞进 API：accounts 里的字段会随 JSON 一起出网
+RED   M12-sidebar-default-order-drift      匹配=1  变异前 pass=15 → 变异后 fail=1
+        宿主侧 sidebar 默认 order 改成 30：与 client.js 的 20 不一致，入口排序漂移
+RED   M13-debug-skip-whitelist             匹配=1  变异前 pass=21 → 变异后 fail=2
+        路由不再执行同源栅栏：evil.com 的页面（Host 伪造）能直接驱动调试端点
+RED   M14-debug-leak-secret                匹配=1  变异前 pass=21 → 变异后 fail=1
+        响应不再过 redactDeep：中转站回显的 Authorization 会把明文密钥写进页面
+RED   M15-debug-dryrun-sends               匹配=1  变异前 pass=21 → 变异后 fail=1
+        dryRun 被写死成 false：预览按钮会真的打上游（还会烧额度）
+RED   M16-debug-json-line-0                匹配=1  变异前 pass=26 → 变异后 fail=3
+        去掉 bracketScanner 兜底：V8 不给 position 时（如 tru 拼错）报不出行号
+RED   M17-debug-preview-send-diverges      匹配=1  变异前 pass=26 → 变异后 fail=1
+        预览与发送的 payload 不再同构：dryRun 改了 includeRaw，两边发的请求不一样
+RED   M18-debug-invalid-still-sends        匹配=1  变异前 pass=26 → 变异后 fail=2
+        发送按钮不看 form.ok：没选账户或 body 非法时用户仍能点发送，请求被静默丢弃
+==============================================================================
+变异生效 18/18，被测试杀死 18/18
+还原后基线：tokens.test.ts pass=12/fail=0 · client-entry.test.ts pass=15/fail=0 · dashboard.test.ts pass=10/fail=0 · debug-api.test.ts pass=21/fail=0 · debug-ui.test.ts pass=26/fail=0

@@ -9,7 +9,7 @@ import { createServer, type Server } from 'node:http'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import type { CallOptions, LogFn } from './types.ts'
+import type { CallOptions, LogFn, ResolvedConfig } from './types.ts'
 import type { ConsoleRegistry } from './core/registry.ts'
 import type { BalanceService } from './core/balance.ts'
 import type { InvocationService } from './core/invocation.ts'
@@ -23,10 +23,63 @@ export interface DashboardOptions {
   port: number
   pollMs: number
   log?: LogFn
+  /**
+   * 归一化后的配置。只经 `publicConfig()` 脱敏后再进 JSON ——
+   * 账户的 apiKey / apiKeyEnv 永远不出现在这里（它们本来也不在 ResolvedConfig 里，
+   * 但这一层仍然显式白名单，防止以后有人往 ResolvedConfig 加字段时顺手泄露）。
+   */
+  config?: ResolvedConfig
+}
+
+/**
+ * 页面可见的配置白名单。
+ *
+ * 用途只有一个：看板需要知道「预警阈值 / 缓存 TTL / 各开关」才能画出诚实的
+ * 进度条和状态；除此之外一个字段都不给。
+ */
+export interface PublicConfig {
+  lowBalanceThreshold?: number
+  cacheTtlMs: number
+  autoRefreshMs: number
+  autoDiscover: boolean
+  dashboard: { enabled: boolean; host: string; port: number; pollMs: number }
+  sidebar: { enabled: boolean; label: string; order: number }
+  llmProvider: { enabled: boolean; routePrefix: string }
+}
+
+export function publicConfig(config: ResolvedConfig | undefined): PublicConfig | null {
+  if (!config) return null
+  return {
+    lowBalanceThreshold: config.balance.lowBalanceThreshold,
+    cacheTtlMs: config.balance.cacheTtlMs,
+    autoRefreshMs: config.balance.autoRefreshMs,
+    autoDiscover: config.autoDiscover.enabled,
+    dashboard: {
+      enabled: config.dashboard.enabled,
+      host: config.dashboard.host,
+      port: config.dashboard.port,
+      pollMs: config.dashboard.pollMs,
+    },
+    sidebar: {
+      enabled: config.sidebar.enabled,
+      label: config.sidebar.label,
+      order: config.sidebar.order,
+    },
+    llmProvider: { enabled: config.llm.enabled, routePrefix: config.llm.routePrefix },
+  }
 }
 
 export interface DashboardHandle {
+  /** 配置里写的地址。端口写 0（让内核分配）时这不是真实地址，用 ready() 取。 */
   url: string
+  /**
+   * 等 `listen` 真正绑定成功后 resolve 出**实际**地址。
+   *
+   * 需要它的理由：`port: 0` 时内核才决定端口，配置里的 `url` 是 `…:0`；
+   * 端口被占用时 `listen` 会失败而不是抛出（错误走 'error' 事件），
+   * 调用方只有 await 这个 promise 才知道看板到底起没起来。
+   */
+  ready(): Promise<string>
   close(): Promise<void>
 }
 
@@ -77,6 +130,8 @@ export function createDashboard(options: DashboardOptions): DashboardHandle {
           accounts: options.registry.listAccounts(),
           providers: options.registry.listProviders(),
           report: options.balances.snapshot(),
+          // 脱敏后的配置快照：页面据此画阈值进度条与状态徽标，不含任何密钥
+          config: publicConfig(options.config),
         })
       }
       if (req.method === 'POST' && url.pathname === '/api/refresh') {
@@ -112,15 +167,45 @@ export function createDashboard(options: DashboardOptions): DashboardHandle {
     }
   })
 
-  server.listen(options.port, options.host, () => {
-    log(`余额看板已启动：http://${options.host}:${options.port}`)
+  let listenTimer: NodeJS.Timeout | undefined
+  const ready = new Promise<string>((resolve, reject) => {
+    server.once('listening', () => {
+      const address = server.address()
+      let actual = `http://${options.host}:${options.port}`
+      if (address && typeof address === 'object') actual = `http://${options.host}:${address.port}`
+      // 启动日志延到 listening 里打，才拿得到 port:0 的真实端口
+      log(`余额看板已启动：${actual}`)
+      resolve(actual)
+    })
+    server.once('error', (error: Error) => {
+      log(`看板监听失败: ${error.message}`)
+      reject(new Error(`看板监听失败: ${error.message}`))
+    })
   })
+  // 没人 await ready() 时不要留下一个未处理的 rejection 把进程带崩
+  void ready.catch(() => undefined)
+  listenTimer = setTimeout(() => log('看板监听超时（10s）'), 10_000)
+  listenTimer.unref?.()
+
   server.on('error', (error) => log(`看板监听失败: ${error.message}`))
+
+  // 真正的绑定放这里：ready / error 两个 once 监听器必须先挂上再 listen，
+  // 否则端口被占用的错误会在监听器注册前触发，promise 永远挂着。
+  server.listen(options.port, options.host)
 
   return {
     url: `http://${options.host}:${options.port}`,
+    ready: () => ready,
     close: () =>
       new Promise<void>((resolve) => {
+        if (listenTimer) clearTimeout(listenTimer)
+        if (!server.listening) {
+          resolve()
+          return
+        }
+        // 必须主动断开 keep-alive 连接：server.close() 只是停止接受新连接，
+        // 浏览器/测试客户端留下的空闲连接会让回调一直不触发（表现为 close() 悬挂）。
+        server.closeAllConnections?.()
         server.close(() => resolve())
       }),
   }
