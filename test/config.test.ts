@@ -119,6 +119,44 @@ test('注册中心：raw 请求的主机白名单与 https 约束', () => {
   assert.doesNotThrow(() => registry.assertAllowedUrl('https://api.deepseek.com/models'))
   assert.throws(() => registry.assertAllowedUrl('https://evil.example.com/x'), /不在白名单/)
   assert.throws(() => registry.assertAllowedUrl('http://api.deepseek.com/x'), /仅允许 https/)
-  assert.doesNotThrow(() => registry.assertAllowedUrl('http://127.0.0.1:11434/v1/models'))
+  // 回环地址不再自动绕过白名单（SSRF 修复）：默认必须拒绝
+  assert.throws(
+    () => registry.assertAllowedUrl('http://127.0.0.1:11434/v1/models'),
+    /不在白名单.*本地回环地址默认也需显式允许/,
+  )
   registry.dispose()
+})
+
+test('SSRF：回环默认拒绝，显式列入 allowedHosts 后才放行', () => {
+  const blocked = resolveConfig({
+    accounts: [{ id: 'ds', provider: 'deepseek', apiKeyEnv: 'TEST_DS_KEY' }],
+  })
+  assert.equal(blocked.call.requireLoopbackAllowlist, true)
+  const r1 = new ConsoleRegistry(blocked, { env: TEST_ENV })
+  assert.throws(() => r1.assertAllowedUrl('http://localhost:8080/anything'), /不在白名单/)
+  assert.throws(() => r1.assertAllowedUrl('http://[::1]:11434/v1/models'), /不在白名单/)
+  r1.dispose()
+
+  // 显式把回环 host 写进白名单 → 放行（收紧但仍可用）
+  const allowed = resolveConfig({
+    accounts: [{ id: 'ds', provider: 'deepseek', apiKeyEnv: 'TEST_DS_KEY' }],
+    allowedHosts: ['127.0.0.1', 'localhost'],
+  })
+  const r2 = new ConsoleRegistry(allowed, { env: TEST_ENV })
+  assert.doesNotThrow(() => r2.assertAllowedUrl('http://127.0.0.1:11434/v1/models'))
+  assert.doesNotThrow(() => r2.assertAllowedUrl('http://localhost:8080/x'))
+  r2.dispose()
+})
+
+test('SSRF：allowLoopbackTargets=true 才恢复旧的回环豁免（显式自愿放宽）', () => {
+  const relaxed = resolveConfig({
+    accounts: [{ id: 'ds', provider: 'deepseek', apiKeyEnv: 'TEST_DS_KEY' }],
+    allowLoopbackTargets: true,
+  })
+  assert.equal(relaxed.call.requireLoopbackAllowlist, false)
+  const r = new ConsoleRegistry(relaxed, { env: TEST_ENV })
+  assert.doesNotThrow(() => r.assertAllowedUrl('http://127.0.0.1:11434/v1/models'))
+  // 外网主机仍必须在白名单里，放宽只影响回环
+  assert.throws(() => r.assertAllowedUrl('https://evil.example.com/x'), /不在白名单/)
+  r.dispose()
 })

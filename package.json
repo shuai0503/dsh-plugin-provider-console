@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-provider-console",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "DeepSeek Harness 插件：多账户余额查询/刷新 + 通用模型 API 调用入口 + 模型 provider（把账户接进对话框的模型选择器）。Provider console for DeepSeek Harness: multi-account balance checks, a generic OpenAI-compatible invocation tool, and a model provider that surfaces accounts in the model picker.",
   "type": "module",
   "main": "./lib/index.js",

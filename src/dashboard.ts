@@ -14,6 +14,7 @@ import type { ConsoleRegistry } from './core/registry.ts'
 import type { BalanceService } from './core/balance.ts'
 import type { InvocationService } from './core/invocation.ts'
 import { lossless } from './core/errors.ts'
+import { sameOrigin } from './debug-api.ts'
 
 export interface DashboardOptions {
   registry: ConsoleRegistry
@@ -108,6 +109,22 @@ export function createDashboard(options: DashboardOptions): DashboardHandle {
       })
       res.end(text)
     }
+
+    // 写操作必须有可证明的同源来源。
+    //
+    // 背景：本看板绑在 127.0.0.1，但浏览器里任意一个网页都能对它发
+    // `POST /api/call`（用 text/plain 可绕过 CORS 预检），服务端照常执行 =>
+    // 等于「任意网页诱导本机用已存的 Key 调一次付费 API」。响应被 CORS 挡
+    // 住也没用，业务已经跑完了。
+    //
+    // 复用 debug-api.ts 的同一份栅栏（Host / sec-fetch-site / Origin 三检），
+    // 避免同一仓库两套安全标准。curl 不带 Origin 仍放行，保留 CLI 用法。
+    const WRITE_PATHS = new Set(['/api/call', '/api/refresh'])
+    if (req.method === 'POST' && WRITE_PATHS.has(url.pathname)) {
+      const verdict = sameOrigin({ headers: req.headers as Record<string, string | string[] | undefined> })
+      if (!verdict.ok) return send(403, { error: `请求来源校验失败：${verdict.reason}` })
+    }
+
     try {
       if (req.method === 'GET' && url.pathname === '/') return send(200, renderPage())
       if (req.method === 'GET' && url.pathname === '/api/health') {

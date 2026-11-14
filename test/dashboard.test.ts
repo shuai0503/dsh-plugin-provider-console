@@ -8,6 +8,7 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import http from 'node:http'
 import { createDashboard } from '../src/dashboard.ts'
 import { publicConfig } from '../src/dashboard.ts'
 import { resolveConfig } from '../src/config.ts'
@@ -263,4 +264,99 @@ test('sidebar 与 dashboard 的默认值互相独立（关看板不影响入口�
   const config = resolveConfig({ dashboard: { enabled: false } })
   assert.equal(config.dashboard.enabled, false)
   assert.equal(config.sidebar.enabled, true, 'dashboard 关掉时左侧入口仍应保留（面板自己会提示）')
+})
+
+// ---------------------------------------------------------------------------
+// 写操作同源栅栏（CSRF / DNS rebinding）
+//
+// 背景：看板绑在 127.0.0.1，但任意网页都能发 `POST /api/call`（text/plain
+// 可绕过 CORS 预检），服务端照常执行 => 诱导本机用已存 Key 调一次付费 API。
+// 修复后在路由分发前用 sameOrigin() 拦；curl 不带 Origin 仍放行。
+// ---------------------------------------------------------------------------
+
+test('POST /api/call：跨站请求（sec-fetch-site: cross-site）被 403 拒绝', async () => {
+  await withDashboard({ accounts: [] }, async (base) => {
+    const res = await fetch(`${base}/api/call`, {
+      method: 'POST',
+      headers: { 'content-type': 'text/plain', 'sec-fetch-site': 'cross-site' },
+      body: JSON.stringify({ accountId: 'x', dryRun: true }),
+    })
+    assert.equal(res.status, 403)
+    const body = (await res.json()) as { error: string }
+    assert.match(body.error, /请求来源校验失败/)
+  })
+})
+
+test('POST /api/refresh：带异源 Origin 被 403 拒绝', async () => {
+  await withDashboard({ accounts: [] }, async (base) => {
+    const res = await fetch(`${base}/api/refresh`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', origin: 'http://evil.example.com' },
+      body: '{}',
+    })
+    assert.equal(res.status, 403)
+    const body = (await res.json()) as { error: string }
+    assert.match(body.error, /请求来源校验失败/)
+  })
+})
+
+/**
+ * 用原始 http.request 发请求并**覆盖 Host 头**。
+ *
+ * Node 的 fetch 会忽略自定义 Host（始终用 URL 的 host），没法用它验证
+ * DNS rebinding 防护；必须走这一层才能真的把 Host 伪造成外部域名。
+ */
+function postRaw(
+  base: string,
+  path: string,
+  headers: Record<string, string>,
+): Promise<{ status: number; body: string }> {
+  const u = new URL(base + path)
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      {
+        hostname: u.hostname,
+        port: u.port,
+        path: u.pathname,
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+      },
+      (resp) => {
+        let body = ''
+        resp.on('data', (chunk) => { body += chunk })
+        resp.on('end', () => resolve({ status: resp.statusCode ?? 0, body }))
+      },
+    )
+    req.on('error', reject)
+    req.end(JSON.stringify({ accountId: 'x', dryRun: true }))
+  })
+}
+
+test('POST /api/call：伪造 Host（DNS rebinding）被 403 拒绝', async () => {
+  await withDashboard({ accounts: [] }, async (base) => {
+    const res = await postRaw(base, '/api/call', { host: 'evil.example.com' })
+    assert.equal(res.status, 403)
+    assert.match(res.body, /请求来源校验失败/)
+  })
+})
+
+test('POST /api/call：无 Origin 的 CLI 请求仍放行（保留 curl 用法）', async () => {
+  await withDashboard({ accounts: [] }, async (base) => {
+    const res = await fetch(`${base}/api/call`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ accountId: 'x', dryRun: true }),
+    })
+    // 放行后走业务：accountId 不存在会返回结构化结果而非 403
+    assert.notEqual(res.status, 403, 'CLI 请求不应被同源栅栏误伤')
+  })
+})
+
+test('GET /api/state 不受写栅栏影响（读操作无需来源校验）', async () => {
+  await withDashboard({ accounts: [] }, async (base) => {
+    const res = await fetch(`${base}/api/state`, {
+      headers: { origin: 'http://evil.example.com' },
+    })
+    assert.equal(res.status, 200)
+  })
 })

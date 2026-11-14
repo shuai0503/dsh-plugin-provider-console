@@ -568,6 +568,14 @@ export interface ConsoleConfig {
   allowRawRequests?: boolean
   /** raw / 自定义 baseUrl 的主机白名单；默认由账户 URL 自动推导。 */
   allowedHosts?: string[]
+  /**
+   * 是否允许 raw 模式把请求打到本机回环地址（127.0.0.1 / localhost / ::1）。
+   *
+   * 默认 false —— 回环不再是白名单的例外，否则任意网页可借本机插件的凭据
+   * 打 Ollama(11434)、其它插件的管理口或 IDE 调试口（SSRF）。
+   * 确实需要调本地服务时显式设为 true，并把目标 host 写进 allowedHosts。
+   */
+  allowLoopbackTargets?: boolean
 
   dashboard?: Partial<DashboardConfig>
   /** 左侧栏入口 / 设置页分区。 */
@@ -622,6 +630,8 @@ export interface ResolvedConfig {
     allowStream: boolean
     allowRawRequests: boolean
     allowedHosts: string[]
+    /** 回环地址是否也要求显式列入 allowedHosts；默认 true（收紧）。 */
+    requireLoopbackAllowlist: boolean
   }
   dashboard: DashboardConfig
   sidebar: SidebarConfig

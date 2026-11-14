@@ -194,7 +194,8 @@ iframe 自己 `setProperty` 到 `:root`。iframe 侧不接受 `--dsw-*` 以外�
 ## 安全设计
 
 - **密钥不出本机**：只从环境变量或宿主凭据服务读取，配置树上不落明文，工具输出一律脱敏
-- **自动探测只问存在性**：首轮只用 `describe` 判断「配没配」，不取值；密钥在首次查询余额时才经 `resolve` 读取
+- **自动探测行为**：首轮对每个服务商调用一次 `ctx.credentials.resolve()`（与 DSH 自身调用等价），
+  取到的值只进注册中心的内存私有表，不落盘、不进配置、不进日志
 - **密钥不进配置对象**：自动探测到的密钥只存在注册中心的私有表里，不写入 `AccountConfig` / `ResolvedConfig`，
   不出现在报告、日志或任何工具返回值中
 - **不硬依赖宿主服务**：`credentials` 走 `ctx.get()` 可选获取，宿主没有该服务时静默降级，插件照常加载
@@ -202,7 +203,12 @@ iframe 自己 `setProperty` 到 `:root`。iframe 侧不接受 `--dsw-*` 以外�
 - **看板只绑 `127.0.0.1`**：不监听外网接口
 - **配置快照走白名单**：`/api/state` 里的 `config` 由 `publicConfig()` 逐个字段挑选，
   不直接把 `ResolvedConfig` 序列化出去（`test/dashboard.test.ts` 用真实 HTTP 断言这一条）
-- **出站主机白名单**：`raw` 模式和自定义 `baseUrl` 受白名单约束，默认自动并入已配置账户的端点
+- **出站主机白名单（含回环）**：`raw` 模式和自定义 `baseUrl` 受白名单约束，默认自动并入已配置账户的端点。
+  **回环地址（`127.0.0.1` / `localhost` / `::1`）默认同样被拒绝**，防止借本机插件凭据打
+  Ollama(11434)、其它插件管理口或 IDE 调试口（SSRF）。确需调本地服务时，把目标 host 写进 `allowedHosts`；
+  或显式设 `allowLoopbackTargets: true` 恢复旧豁免（仅回环豁免，外网主机仍受白名单约束）
+- **写操作同源栅栏**：看板的 `POST /api/call` 与 `/api/refresh` 校验 Host / `sec-fetch-site` / Origin，
+  阻断「任意网页诱导本机用已存 Key 调一次付费 API」。`curl` 不带 `Origin` 仍可用（保留 CLI 用法）
 - **重试有边界**：只有网络错误 / 5xx / 限流会重试；401 / 402 / 解析错误立即失败，不会把鉴权失败刷成噪音
 
 ## 开发

@@ -307,7 +307,14 @@ export class ConsoleRegistry {
     return unique(hosts.filter(Boolean))
   }
 
-  /** SSRF 防护：raw 模式 / 自定义 path 不得跳出已知主机；非本地一律要求 https。 */
+  /**
+   * SSRF 防护：raw 模式 / 自定义 path 不得跳出已知主机；非本地一律要求 https。
+   *
+   * 历史漏洞：`loopback` 曾作为白名单的短路条件，导致 127.0.0.1 任意端口
+   * （Ollama 11434、其它插件管理口、IDE 调试口）都能被带凭据打穿。
+   * 现在回环默认同样要求显式列入 allowedHosts；仅当用户显式配置
+   * `allowLoopbackTargets: true` 时才退回旧行为（供高级用户自愿放宽）。
+   */
   assertAllowedUrl(url: string): void {
     let parsed: URL
     try {
@@ -316,13 +323,23 @@ export class ConsoleRegistry {
       throw configError(`非法 URL：${redact(url)}`)
     }
     const host = parsed.hostname.toLowerCase()
-    const loopback = host === '127.0.0.1' || host === 'localhost' || host === '::1'
+    // URL.hostname 对 IPv6 字面量会带方括号（"[::1]"），统一去掉再判回环，
+    // 否则 IPv6 回环会误走「非 https」分支，错误信息也不准确。
+    const bareHost = host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host
+    const loopback = bareHost === '127.0.0.1' || bareHost === 'localhost' || bareHost === '::1'
     if (parsed.protocol !== 'https:' && !(loopback && parsed.protocol === 'http:')) {
       throw configError(`仅允许 https（本地回环可用 http）：${redact(url)}`)
     }
-    if (!loopback && !this.allowedHosts().includes(host)) {
+    const allowed = this.allowedHosts().map((h) =>
+      h.startsWith('[') && h.endsWith(']') ? h.slice(1, -1) : h,
+    )
+    // 回环豁免只在显式开启时生效；否则回环与外网主机一视同仁，都必须在白名单里。
+    const loopbackExempt = loopback && !this.config.call.requireLoopbackAllowlist
+    if (!loopbackExempt && !allowed.includes(bareHost)) {
       throw configError(
-        `目标主机 "${host}" 不在白名单。请在 allowedHosts 中显式添加（当前：${this.allowedHosts().slice(0, 8).join(', ')}）`,
+        `目标主机 "${bareHost}" 不在白名单。请在 allowedHosts 中显式添加` +
+          `${loopback ? '（本地回环地址默认也需显式允许）' : ''}` +
+          `（当前：${allowed.slice(0, 8).join(', ')}）`,
       )
     }
   }

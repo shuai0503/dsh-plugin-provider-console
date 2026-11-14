@@ -127,6 +127,9 @@ export function resolveConfig(config: ConsoleConfig = {}, cwd: string = process.
       allowStream: config.allowStream === true,
       allowRawRequests: config.allowRawRequests !== false,
       allowedHosts: [...hosts],
+      // 默认收紧：回环地址不再自动绕过白名单。
+      // 需要调本地服务时，显式设 allowLoopbackTargets: false 且把 host 写进 allowedHosts。
+      requireLoopbackAllowlist: config.allowLoopbackTargets !== true,
     },
     dashboard,
     // 与 client.js 的 panelOptions() 默认值一一对应：enabled 缺省 true、order 缺省 20。
